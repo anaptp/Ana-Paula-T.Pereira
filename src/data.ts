@@ -16,7 +16,7 @@ export const B = {
 export const T: Record<string, any> = {
   pt: {
     login: "Entrar", logout: "Sair", email: "E-mail", password: "Senha",
-    dashboard: "Início", montagem: "Montagem", locacoes: "Locações", profile: "Perfil",
+    dashboard: "Início", montagem: "Montagem", locacoes: "Locações", documentos: "Docs Extras", profile: "Perfil",
     hi: "Olá",
     totalMontagem: "Total Montagem", totalPago: "Total Pago", faltaPagar: "Falta Pagar",
     lucroTotal: "Lucro Total", totalDespesas: "Total Despesas",
@@ -37,10 +37,67 @@ export const T: Record<string, any> = {
     mesAtual: "Mês atual",
     verDetalhes: "Ver detalhes",
     fechar: "Fechar",
+    proprietario: "Proprietário",
+    administrador: "Administrador",
+    portalAdmin: "Portal do Administrador",
+    portalProp: "Portal do Proprietário",
+    seuNome: "Seu Nome",
+    cadastrar: "Cadastrar",
+    jaTenhoConta: "Já tenho uma conta",
+    criarConta: "Criar nova conta",
+    dadosPessoais: "Dados Pessoais",
+    nomeCompleto: "Nome Completo",
+    telefone: "Telefone",
+    endereco: "Endereço",
+    dataNascimento: "Data de Nascimento",
+    salvar: "Salvar",
+    dadosSalvos: "Dados salvos com sucesso!",
+    editar: "Editar",
+    alterarFoto: "Alterar foto",
+    imprimirNfs: "Imprimir NFs",
+    baixarNfs: "Baixar NFs",
+    imprimirRelatorios: "Imprimir Relatórios",
+    baixarRelatorios: "Baixar Relatórios",
+    anexarRelatoriosAdmin: "Anexar Relatórios (Admin)",
+    nenhumaLocacao: "Nenhuma locação registrada neste mês",
+    lucroAcumulado: "Lucro Total Acumulado",
+    avisoImportante: "Aviso Importante",
+    confirmarLeitura: "Confirmar Leitura",
+    meses: ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"],
+    montagemPaga: "Montagem paga",
+    recuperadoLocacoes: "Recuperado via locações",
+    falta: "Falta",
+    de: "de",
+    lucroMensal: "Lucro mensal",
+    acumulado: "Acumulado",
+    rooms: {
+      "Entrada": "Entrada",
+      "Sala de Jantar": "Sala de Jantar",
+      "Sala": "Sala",
+      "Cozinha": "Cozinha",
+      "Banheiro": "Banheiro",
+      "Quarto": "Quarto",
+      "Extras / Manutenção": "Extras / Manutenção"
+    },
+    issues: {
+      "Chaminé do gás — tamanho não liberado pela Naturgy": "Chaminé do gás — tamanho não liberado pela Naturgy",
+      "Bocal pia cozinha quebrado": "Bocal pia cozinha quebrado",
+      "Cifão": "Cifão",
+      "Instalação elétrica para ar condicionado": "Instalação elétrica para ar condicionado",
+      "Instalação elétrica chuveiro": "Instalação elétrica chuveiro",
+      "Retirada de câmeras": "Retirada de câmeras",
+      "Roda pé com cupim": "Roda pé com cupim",
+      "Colchão": "Colchão",
+      "Tela mosqueteiro": "Tela mosqueteiro",
+      "Buracos no rebaixamento de gesso": "Buracos no rebaixamento de gesso",
+      "Paredes com pintura toda manchada": "Paredes com pintura toda manchada",
+      "Cupim comeu o fundo do primeiro armário — comprou outro sem cobrar": "Cupim comeu o fundo do primeiro armário — comprou outro sem cobrar",
+      "Muitas Baratas": "Muitas Baratas"
+    }
   },
   en: {
     login: "Sign In", logout: "Sign Out", email: "Email", password: "Password",
-    dashboard: "Home", montagem: "Setup", locacoes: "Bookings", profile: "Profile",
+    dashboard: "Home", montagem: "Setup", locacoes: "Bookings", documentos: "Extra Docs", profile: "Profile",
     hi: "Hello",
     totalMontagem: "Total Setup", totalPago: "Total Paid", faltaPagar: "Remaining",
     lucroTotal: "Total Profit", totalDespesas: "Total Expenses",
@@ -61,6 +118,63 @@ export const T: Record<string, any> = {
     mesAtual: "Current month",
     verDetalhes: "View details",
     fechar: "Close",
+    proprietario: "Owner",
+    administrador: "Administrator",
+    portalAdmin: "Administrator Portal",
+    portalProp: "Owner Portal",
+    seuNome: "Your Name",
+    cadastrar: "Sign Up",
+    jaTenhoConta: "I already have an account",
+    criarConta: "Create new account",
+    dadosPessoais: "Personal Data",
+    nomeCompleto: "Full Name",
+    telefone: "Phone",
+    endereco: "Address",
+    dataNascimento: "Date of Birth",
+    salvar: "Save",
+    dadosSalvos: "Data saved successfully!",
+    editar: "Edit",
+    alterarFoto: "Change photo",
+    imprimirNfs: "Print NFs",
+    baixarNfs: "Download NFs",
+    imprimirRelatorios: "Print Reports",
+    baixarRelatorios: "Download Reports",
+    anexarRelatoriosAdmin: "Attach Reports (Admin)",
+    nenhumaLocacao: "No bookings registered this month",
+    lucroAcumulado: "Total Accumulated Profit",
+    avisoImportante: "Important Notice",
+    confirmarLeitura: "Confirm Reading",
+    meses: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    montagemPaga: "Setup paid",
+    recuperadoLocacoes: "Recovered via bookings",
+    falta: "Remaining",
+    de: "of",
+    lucroMensal: "Monthly profit",
+    acumulado: "Accumulated",
+    rooms: {
+      "Entrada": "Entryway",
+      "Sala de Jantar": "Dining Room",
+      "Sala": "Living Room",
+      "Cozinha": "Kitchen",
+      "Banheiro": "Bathroom",
+      "Quarto": "Bedroom",
+      "Extras / Manutenção": "Extras / Maintenance"
+    },
+    issues: {
+      "Chaminé do gás — tamanho não liberado pela Naturgy": "Gas chimney — size not approved by Naturgy",
+      "Bocal pia cozinha quebrado": "Broken kitchen sink nozzle",
+      "Cifão": "Siphon",
+      "Instalação elétrica para ar condicionado": "Electrical installation for air conditioning",
+      "Instalação elétrica chuveiro": "Electrical installation for shower",
+      "Retirada de câmeras": "Camera removal",
+      "Roda pé com cupim": "Baseboard with termites",
+      "Colchão": "Mattress",
+      "Tela mosqueteiro": "Mosquito net",
+      "Buracos no rebaixamento de gesso": "Holes in the plaster ceiling",
+      "Paredes com pintura toda manchada": "Walls with stained paint",
+      "Cupim comeu o fundo do primeiro armário — comprou outro sem cobrar": "Termites ate the bottom of the first cabinet — bought another without charging",
+      "Muitas Baratas": "Many cockroaches"
+    }
   }
 };
 
@@ -215,3 +329,38 @@ export const IMOVEL = {
     { mes: "Fev 26", hospedes: 0, noites: 0, lucro: 0, registros: [] },
   ]
 };
+
+export const IMOVEIS_MOCK = [
+  IMOVEL,
+  {
+    ...IMOVEL,
+    id: 2,
+    nome: "Cobertura Copacabana",
+    apelido: "Copa Penthouse",
+    alerta: "Lembrete: A vistoria anual do gás está agendada para a próxima semana.",
+    montagem: {
+      ...IMOVEL.montagem,
+      totalMontagem: 45000.00,
+      totalPago: 30000.00,
+      comodos: [
+        {
+          nome: "Sala",
+          itens: [
+            { item: "Sofá Retrátil", datCompra: "10/05/2024", preco: 3500.00, qtd: 1, loja: "Tok&Stok", total: 3500.00 },
+            { item: "TV 65 polegadas", datCompra: "12/05/2024", preco: 4200.00, qtd: 1, loja: "Fast Shop", total: 4200.00 },
+          ]
+        }
+      ],
+      problemasInesperados: ["Infiltração no teto da sala"]
+    },
+    locacoesPorMes: [
+      {
+        mes: "Jan 25", hospedes: 4, noites: 10, lucro: 4500.00,
+        registros: [
+          { hospede: "João Silva", nHospedes: 4, data: "05/01/2025", diarias: 10, quarto: "TUDO", valorLiquido: 5000.00, taxaLimpeza: 200.00, comissao: 500.00, extra: 0, plataforma: "Airbnb", despesas: 0, lucro: 4500.00 },
+        ]
+      },
+      { mes: "Fev 25", hospedes: 0, noites: 0, lucro: 0, registros: [] },
+    ]
+  }
+];
