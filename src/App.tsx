@@ -57,7 +57,7 @@ const Dashboard = ({ t, lang, imovel, isAdmin }: any) => {
   const handleSaveAlerta = async () => {
     imovel.alerta = JSON.stringify(alertas);
     setIsEditingAlerta(false);
-    const { error } = await supabase.from('imoveis').update({ alerta: JSON.stringify(alertas) }).eq('id', imovel.id);
+    const { error } = await supabase.from('imoveis').update({ alerta: JSON.stringify(alertas) }).eq('id', String(imovel.id));
     if (error) alert("Erro ao salvar: " + error.message);
   };
 
