@@ -1183,7 +1183,19 @@ export default function App() {
 
   const renderView = () => {
     if (tab === "dashboard") return <Dashboard t={t} lang={lang} imovel={imovelData} isAdmin={isAdmin} />;
-    if (tab === "montagem") return <MontagemView t={t} imovel={imovelData} isAdmin={isAdmin} />;
+    if (tab === "montagem") {
+  if (!imovelData || !imovelData.montagem) {
+    return <div style={{padding:20}}>Carregando dados da montagem...</div>;
+  }
+
+  return (
+    <MontagemView 
+      t={t} 
+      imovel={imovelData} 
+      isAdmin={isAdmin} 
+    />
+  );
+}
     if (tab === "locacoes") return <LocacoesView t={t} imovel={imovelData} isAdmin={isAdmin} />;
     if (tab === "documentos") return <DocumentosView t={t} imovel={imovelData} isAdmin={isAdmin} isSupabaseConfigured={isSupabaseConfigured} />;
     if (tab === "infoprop") return <InfoPropriedadeView t={t} imovel={imovelData} isAdmin={isAdmin} />;
