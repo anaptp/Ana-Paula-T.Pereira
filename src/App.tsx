@@ -2045,12 +2045,14 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
     
     setLoading(true);
     if (isRegister) {
+      const roleToSave = role === 'admin' ? 'pendente' : role;
       const { error } = await supabase.auth.signUp({ 
         email, 
         password: pw,
-        options: { data: { role, name } }
+        options: { data: { role: roleToSave, name } }
       });
       if (error) alert(error.message);
+      else if (role === 'admin') alert("Solicitação enviada! Aguarde a aprovação do administrador.");
       else alert("Cadastro realizado! Faça login.");
       setIsRegister(false);
     } else {
