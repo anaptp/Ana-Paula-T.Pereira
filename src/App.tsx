@@ -227,7 +227,7 @@ const handleSaveAlerta = async () => {
 // MONTAGEM VIEW
 // ============================================================
 const MontagemView = ({ t, imovel, isAdmin }: any) => {
-  const [expandido, setExpandido] = useState<number | null>(null);
+ useState<string | null>(null);
   const m = imovel.montagem;
   const totalItens = m.comodos.flatMap((c: any) => c.itens).filter((i: any) => !i.emprestado).reduce((a: any, i: any) => a + i.total, 0);
 
