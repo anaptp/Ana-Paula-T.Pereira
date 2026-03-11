@@ -54,7 +54,7 @@ const Dashboard = ({ t, lang, imovel, isAdmin }: any) => {
   const [isEditingAlerta, setIsEditingAlerta] = useState(false);
   const [novoAlerta, setNovoAlerta] = useState("");
 
- const handleSaveAlerta = async () => {
+const handleSaveAlerta = async () => {
     setIsEditingAlerta(false);
     const novoAlerta = JSON.stringify(alertas);
     imovel.alerta = novoAlerta;
@@ -67,6 +67,7 @@ const Dashboard = ({ t, lang, imovel, isAdmin }: any) => {
     
     alert(JSON.stringify(result));
   };
+  
   const handleAddAlerta = () => {
     if (novoAlerta.trim()) {
       setAlertas([...alertas, novoAlerta.trim()]);
