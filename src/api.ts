@@ -89,7 +89,7 @@ export async function getDashboardData(userId: string, isAdmin: boolean = false)
         comissaoPerc: Number(imovel.comissao_perc || 20),
         alerta: imovel.alerta || "",
         montagem: IMOVEL.montagem,
-        locacoesPorMes
+        locacoesPorMes,
         problemasInesperados: JSON.parse(imovel.problemas_inesperados || '[]'),
       });
     }
