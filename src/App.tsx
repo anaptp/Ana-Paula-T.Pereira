@@ -2053,7 +2053,22 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
       });
       if (error) alert(error.message);
       else if (role === 'admin') alert("Solicitação enviada! Aguarde a aprovação do administrador.");
-      else alert("Cadastro realizado! Faça login.");
+     else {
+  // Vincula automaticamente ao imóvel padrão
+  const { data: userData } = await supabase.auth.getUser();
+  if (userData?.user && role !== 'admin') {
+    await supabase.from('imoveis')
+      .update({ proprietario_id: userData.user.id })
+      .eq('id', '00000000-0000-0000-0000-000000000001');
+    await supabase.from('profiles').upsert({ 
+      id: userData.user.id, 
+      email, 
+      role: roleToSave,
+      created_at: new Date().toISOString()
+    });
+  }
+  alert("Cadastro realizado! Faça login.");
+}
       setIsRegister(false);
     } else {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password: pw });
