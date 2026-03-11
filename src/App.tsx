@@ -3,9 +3,10 @@ import React, { useState, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { B, T } from "./data";
 import { fmt, fmtShort, printMontagem, printLocacao, mergePdfs } from "./helpers";
-import { AlertCircle, CheckCircle2, Loader2, ChevronLeft, ChevronRight, Download, Printer, Trash2, FileText } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, ChevronLeft, ChevronRight, Download, Printer, Trash2, FileText, Upload } from "lucide-react";
 import { supabase } from "./supabase";
 import { getDashboardData } from "./api";
+import Papa from "papaparse";
 
 // ============================================================
 // BRAND — Apt Stays
@@ -304,7 +305,6 @@ const MontagemView = ({ t, imovel, isAdmin }: any) => {
   };
 
   const handleDeleteNF = async (ci: number, ii: number) => {
-    if (!confirm("Tem certeza que deseja excluir esta NF?")) return;
     const key = `nf_${ci}_${ii}`;
     
     if (isSupabaseConfigured) {
@@ -662,10 +662,27 @@ const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
     }
   };
 
-  const handleRemovePlataforma = (plat: string) => {
+  const handleRemovePlataforma = async (plat: string) => {
     const newPlats = plataformas.filter(p => p !== plat);
     setPlataformas(newPlats);
     localStorage.setItem(`plataformas_${imovel.nome}`, JSON.stringify(newPlats));
+    
+    // Remove attachment
+    const key = `locacao_att_${mes.mes}_${plat}`;
+    if (isSupabaseConfigured) {
+      try {
+        const path = `locacoes/${imovel.nome.replace(/\s+/g, '')}/${mes.mes}/${plat}.pdf`;
+        await supabase.storage.from('aptstays_files').remove([path]);
+      } catch (e) {
+        console.error("Erro ao excluir do Supabase:", e);
+      }
+    }
+    localStorage.removeItem(key);
+    setAttachments(prev => {
+      const next = { ...prev };
+      delete next[plat];
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -821,18 +838,157 @@ const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
     }
   };
 
-  const [syncingLocacoes, setSyncingLocacoes] = useState(false);
-  const [sheetUrlLocacoes, setSheetUrlLocacoes] = useState(localStorage.getItem(`sheet_locacoes_${imovel.nome}`) || "");
+  const [importingCsv, setImportingCsv] = useState(false);
 
-  const handleSyncLocacoes = () => {
-    if (!sheetUrlLocacoes) return;
-    setSyncingLocacoes(true);
-    localStorage.setItem(`sheet_locacoes_${imovel.nome}`, sheetUrlLocacoes);
-    // Simulate sync delay
-    setTimeout(() => {
-      setSyncingLocacoes(false);
-      alert("Dados sincronizados com sucesso a partir da planilha!");
-    }, 1500);
+  const handleImportCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    if (!isSupabaseConfigured) {
+      alert("Supabase não configurado. Não é possível importar.");
+      return;
+    }
+
+    setImportingCsv(true);
+    let totalImportedCount = 0;
+    let errorMessages: string[] = [];
+
+    try {
+      for (const file of files) {
+        await new Promise<void>((resolve, reject) => {
+          Papa.parse(file as any, {
+            header: true,
+            skipEmptyLines: true,
+            complete: async (results: any) => {
+              try {
+                const rows = results.data as any[];
+                let fileImportedCount = 0;
+
+                for (const row of rows) {
+                  // Map old headers to new columns
+                  const hospede = row["HÓSPEDES"] || row["hospede"] || "Hóspede";
+                  const n_hospedes = parseInt(row["N.HÓSPEDES"] || row["n_hospedes"]) || 1;
+                  
+                  // Handle date parsing (assuming DD/MM/YYYY or YYYY-MM-DD or DD/MM)
+                  let data_entrada = null;
+                  const rawDate = row["DATAS"] || row["data_entrada"];
+                  if (rawDate) {
+                    if (rawDate.includes('/')) {
+                      const parts = rawDate.split('/');
+                      if (parts.length === 3) {
+                        let [d, m, y] = parts;
+                        if (y.length === 2) y = "20" + y;
+                        data_entrada = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                      } else if (parts.length === 2) {
+                        let [d, m] = parts;
+                        data_entrada = `2025-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                      }
+                    } else if (rawDate.includes('-')) {
+                      data_entrada = rawDate;
+                    }
+                  }
+
+                  // Fallback date if null
+                  if (!data_entrada) {
+                    data_entrada = new Date().toISOString().split('T')[0];
+                  }
+
+                  const n_diarias = parseInt(row["N. DE DIÁRIAS"] || row["n_diarias"]) || 1;
+                  const quarto = row["QUARTO"] || row["quarto"] || "";
+                  
+                  // Helper to parse currency strings like "R$ 1.234,56" or "1234.56"
+                  const parseCurrency = (val: string) => {
+                    if (!val) return 0;
+                    if (typeof val === 'number') return val;
+                    const clean = val.replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.');
+                    return parseFloat(clean) || 0;
+                  };
+
+                  const valor_liquido = parseCurrency(row[" VALOR LIQUIDO "] || row["VALOR LIQUIDO"] || row["valor_liquido"]);
+                  const taxa_limpeza = parseCurrency(row[" TAXA LIMPEZA "] || row["TAXA LIMPEZA"] || row["taxa_limpeza"]);
+                  
+                  // Parse percentage (e.g., "20%" or "20")
+                  let comissao_perc = 20;
+                  const rawComissao = row[" 20% ANA PAULA "] || row["20% ANA PAULA"] || row["comissao_perc"];
+                  if (rawComissao) {
+                     comissao_perc = parseFloat(rawComissao.replace('%', '')) || 20;
+                  }
+
+                  const valor_extra = parseCurrency(row["VALOR EXTRA"] || row["valor_extra"]);
+                  const plataforma = row["DETALHES DOS HOSPEDES"] || row["PLATAFORMA"] || row["plataforma"] || "";
+                  const despesas = parseCurrency(row["DESPESAS"] || row["despesas"]);
+                  const lucro = parseCurrency(row["TOTAL DE LUCRO"] || row["LUCRO"] || row["lucro"]);
+                  
+                  // Get month reference (e.g., "Jan 25")
+                  let mes_ref = row["MÊS"] || row["MES"] || row["mes_ref"];
+                  if (!mes_ref && data_entrada) {
+                    const d = new Date(data_entrada);
+                    if (!isNaN(d.getTime())) {
+                      const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+                      mes_ref = `${months[d.getMonth()]} ${d.getFullYear().toString().slice(2)}`;
+                    }
+                  }
+                  if (!mes_ref) mes_ref = "Mês Atual";
+
+                  // Insert into Supabase
+                  const { error } = await supabase.from('locacoes').insert({
+                    imovel_id: imovel.id,
+                    hospede,
+                    n_hospedes,
+                    data_entrada,
+                    n_diarias,
+                    quarto,
+                    valor_liquido,
+                    taxa_limpeza,
+                    comissao_perc,
+                    valor_extra,
+                    plataforma,
+                    despesas,
+                    lucro,
+                    mes_ref
+                  });
+
+                  if (error) {
+                    console.error("Erro ao importar linha:", row, error);
+                    errorMessages.push(`Erro na linha do hóspede ${hospede}: ${error.message}`);
+                  } else {
+                    fileImportedCount++;
+                  }
+                }
+
+                totalImportedCount += fileImportedCount;
+                resolve();
+              } catch (err: any) {
+                errorMessages.push(err.message || "Erro desconhecido");
+                reject(err);
+              }
+            },
+            error: (error) => {
+              console.error("Erro ao ler CSV:", error);
+              errorMessages.push(`Erro ao ler arquivo: ${error.message}`);
+              reject(error);
+            }
+          });
+        });
+      }
+
+      if (errorMessages.length > 0) {
+        alert(`Atenção! ${totalImportedCount} locações foram adicionadas, mas ocorreram os seguintes erros:\n\n${errorMessages.slice(0, 5).join('\n')}${errorMessages.length > 5 ? '\n...e mais erros.' : ''}`);
+      } else {
+        alert(`Sucesso! ${totalImportedCount} locações foram adicionadas.`);
+      }
+      
+      if (totalImportedCount > 0) {
+        window.location.reload(); // Reload to fetch new data
+      }
+    } catch (err: any) {
+      console.error("Erro geral na importação:", err);
+      alert(`Ocorreu um erro fatal ao importar: ${err.message || 'Erro desconhecido'}`);
+    } finally {
+      setImportingCsv(false);
+      // Reset input
+      if (e.target) e.target.value = '';
+    }
   };
 
   useEffect(() => {
@@ -848,25 +1004,33 @@ const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
 
       {isAdmin && (
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-blue-100 bg-blue-50/30">
-          <p className="text-sm font-semibold text-blue-800 mb-2">Sincronização com Google Sheets</p>
-          <div className="flex gap-2">
-            <input 
-              type="text" 
-              value={sheetUrlLocacoes}
-              onChange={e => setSheetUrlLocacoes(e.target.value)}
-              placeholder="Cole o link da planilha aqui..."
-              className="flex-1 border border-blue-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1"
-              style={{ '--tw-ring-color': '#3b82f6' } as any}
-            />
-            <button 
-              onClick={handleSyncLocacoes}
-              disabled={syncingLocacoes || !sheetUrlLocacoes}
-              className="px-3 py-2 rounded-lg font-semibold text-white text-xs bg-blue-600 hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-1"
-            >
-              {syncingLocacoes ? <Loader2 className="animate-spin" size={14} /> : "Sincronizar"}
-            </button>
+          <div className="flex justify-between items-center mb-2">
+            <p className="text-sm font-semibold text-blue-800">Importar Histórico (CSV)</p>
           </div>
-          <p className="text-[10px] text-blue-600 mt-1 opacity-70">A planilha deve conter as colunas: Mês, Hóspedes, Noites, Lucro, Plataforma, Nome, Valor.</p>
+          <div className="flex gap-2 items-center">
+            <input 
+              type="file" 
+              accept=".csv"
+              multiple
+              onChange={handleImportCsv}
+              disabled={importingCsv}
+              id="csv-upload"
+              className="hidden"
+            />
+            <label 
+              htmlFor="csv-upload"
+              className={`flex-1 flex items-center justify-center gap-2 border border-blue-200 border-dashed rounded-xl px-4 py-3 text-sm font-medium text-blue-700 bg-white cursor-pointer hover:bg-blue-50 transition ${importingCsv ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {importingCsv ? (
+                <><Loader2 className="animate-spin" size={18} /> Importando...</>
+              ) : (
+                <><Upload size={18} /> Selecionar arquivos CSV</>
+              )}
+            </label>
+          </div>
+          <p className="text-[10px] text-blue-600 mt-2 opacity-70 leading-relaxed">
+            Selecione um arquivo CSV para importar locações para este imóvel. O sistema tentará ler os cabeçalhos antigos automaticamente. Certifique-se de que a planilha tenha uma coluna chamada "MÊS" (ex: Jan 25) para agrupar corretamente.
+          </p>
         </div>
       )}
 
@@ -1963,9 +2127,9 @@ export default function App() {
   const [loadingData, setLoadingData] = useState(false);
   const [showNewImovelModal, setShowNewImovelModal] = useState(false);
   const [newImovelData, setNewImovelData] = useState({ nome: "", apelido: "", proprietarioEmail: "" });
+  const [isAdmin, setIsAdmin] = useState(false);
   const t = T[lang];
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
-  const isAdmin = user?.user_metadata?.role === 'admin';
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -1984,19 +2148,42 @@ export default function App() {
   useEffect(() => {
     if (user) {
       setLoadingData(true);
-      const userIsAdmin = user?.user_metadata?.role === 'admin';
-      getDashboardData(user.id, userIsAdmin).then(data => {
-        setImoveisList(data);
-        if (data && data.length > 0) {
-          setSelectedImovelId(data[0].id);
+      const fetchRoleAndData = async () => {
+        let userIsAdmin = false;
+        if (isSupabaseConfigured) {
+          try {
+            const { data, error } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+            if (data && data.role === 'admin') {
+              userIsAdmin = true;
+            }
+          } catch (e) {
+            console.error("Error fetching role:", e);
+          }
+        } else {
+          userIsAdmin = user?.user_metadata?.role === 'admin';
         }
-        setLoadingData(false);
-      });
+        setIsAdmin(userIsAdmin);
+        
+        try {
+          const data = await getDashboardData(user.id, userIsAdmin);
+          setImoveisList(data);
+          if (data && data.length > 0) {
+            setSelectedImovelId(data[0].id);
+          }
+        } catch (e) {
+          console.error("Error fetching dashboard data:", e);
+          setImoveisList([]);
+        } finally {
+          setLoadingData(false);
+        }
+      };
+      fetchRoleAndData();
     } else {
       setImoveisList([]);
       setSelectedImovelId(null);
+      setIsAdmin(false);
     }
-  }, [user]);
+  }, [user, isSupabaseConfigured]);
 
   const handleLogout = async () => {
     if (isSupabaseConfigured) {
@@ -2036,10 +2223,27 @@ export default function App() {
   
   const imovelData = imoveisList.find(i => i.id === selectedImovelId) || imoveisList[0];
 
-  if (loadingData || !imovelData) {
+  if (loadingData) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Loader2 className="animate-spin text-gray-400" size={32} />
+      </div>
+    );
+  }
+
+  if (!imovelData) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center text-gray-400 mb-4">
+          🏠
+        </div>
+        <h2 className="text-xl font-bold text-gray-800 mb-2">Nenhum imóvel encontrado</h2>
+        <p className="text-sm text-gray-500 max-w-sm mb-6">
+          Não encontramos nenhuma propriedade vinculada à sua conta. Se você é um proprietário, entre em contato com o administrador.
+        </p>
+        <button onClick={handleLogout} className="px-6 py-2 bg-gray-800 text-white rounded-xl font-semibold">
+          Sair
+        </button>
       </div>
     );
   }
@@ -2053,11 +2257,8 @@ export default function App() {
     alertasArray = imovelData.alerta ? [imovelData.alerta] : [];
   }
 
-  if (alertasArray.length > 0 && alertStep < alertasArray.length + 1) {
-    const isLastAlert = alertStep === alertasArray.length;
-    const alertText = isLastAlert 
-      ? "Atenção: após o prazo final, este imóvel será desativado de todo o nosso sistema e plataformas. E é terminantemente proibido o uso de qualquer informação e imagens criadas por nós, para futuro uso. Devido a direito de imagem."
-      : alertasArray[alertStep];
+  if (alertasArray.length > 0 && alertStep < alertasArray.length) {
+    const alertText = alertasArray[alertStep];
 
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-5">
@@ -2076,7 +2277,7 @@ export default function App() {
               style={{ background: B.green }}
             >
               <CheckCircle2 size={18} />
-              {t.confirmarLeitura}
+              {alertStep === alertasArray.length - 1 ? t.confirmarLeitura : "Próximo"}
             </button>
           </div>
         </div>
@@ -2181,8 +2382,8 @@ export default function App() {
                 <input type="text" value={newImovelData.apelido} onChange={e => setNewImovelData({...newImovelData, apelido: e.target.value})} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1" style={{ '--tw-ring-color': B.green } as any} placeholder="Ex: Copa 101" />
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Email do Proprietário (Opcional)</label>
-                <input type="email" value={newImovelData.proprietarioEmail} onChange={e => setNewImovelData({...newImovelData, proprietarioEmail: e.target.value})} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1" style={{ '--tw-ring-color': B.green } as any} placeholder="email@exemplo.com" />
+                <label className="text-xs text-gray-500 block mb-1">Emails dos Proprietários (separados por vírgula)</label>
+                <input type="text" value={newImovelData.proprietarioEmail} onChange={e => setNewImovelData({...newImovelData, proprietarioEmail: e.target.value})} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1" style={{ '--tw-ring-color': B.green } as any} placeholder="dono@email.com, sindico@email.com" />
               </div>
             </div>
             <div className="flex gap-2 mt-6">
