@@ -8,7 +8,7 @@ export const B = {
   blue: "#005bb5", // Azul das ondas
   white: "#ffffff",
   gray: "#f8f9fa",
-  get logoUrl() {
+ get logoUrl() {
   return "/logo.png";
 }
 };
