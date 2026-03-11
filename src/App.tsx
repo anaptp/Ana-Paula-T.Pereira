@@ -2332,7 +2332,7 @@ export default function App() {
                     if (e.target.value === "new") {
                       setShowNewImovelModal(true);
                     } else {
-                      setSelectedImovelId(Number(e.target.value));
+                      setSelectedImovelId(e.target.value);
                       setAlertStep(0); // Reset alert for new property
                     }
                   }}
