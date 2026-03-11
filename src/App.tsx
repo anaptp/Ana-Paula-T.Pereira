@@ -55,13 +55,17 @@ const Dashboard = ({ t, lang, imovel, isAdmin }: any) => {
   const [novoAlerta, setNovoAlerta] = useState("");
 
  const handleSaveAlerta = async () => {
-    imovel.alerta = JSON.stringify(alertas);
     setIsEditingAlerta(false);
-    const { error } = await supabase
+    const novoAlerta = JSON.stringify(alertas);
+    imovel.alerta = novoAlerta;
+    
+    const result = await supabase
       .from('imoveis')
-      .update({ alerta: JSON.stringify(alertas) })
-      .eq('id', '00000000-0000-0000-0000-000000000001');
-    if (error) alert("Erro: " + error.message);
+      .update({ alerta: novoAlerta })
+      .eq('id', '00000000-0000-0000-0000-000000000001')
+      .select();
+    
+    alert(JSON.stringify(result));
   };
   const handleAddAlerta = () => {
     if (novoAlerta.trim()) {
