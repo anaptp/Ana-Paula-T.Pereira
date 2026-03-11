@@ -2173,9 +2173,12 @@ export default function App() {
         if (isSupabaseConfigured) {
           try {
             const { data, error } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-            if (data && data.role === 'admin') {
-              userIsAdmin = true;
+            if (data?.role === 'pendente') {
+              alert("Sua conta está aguardando aprovação do administrador.");
+              await supabase.auth.signOut();
+              return;
             }
+            if (data && data.role === 'admin') userIsAdmin = true;
           } catch (e) {
             console.error("Error fetching role:", e);
           }
