@@ -55,10 +55,17 @@ const Dashboard = ({ t, lang, imovel, isAdmin }: any) => {
   const [novoAlerta, setNovoAlerta] = useState("");
 
 const handleSaveAlerta = async () => {
+    alert("ID do imovel: " + imovel.id);
     setIsEditingAlerta(false);
     const novoAlerta = JSON.stringify(alertas);
     imovel.alerta = novoAlerta;
-    
+    const result = await supabase
+      .from('imoveis')
+      .update({ alerta: novoAlerta })
+      .eq('id', '00000000-0000-0000-0000-000000000001')
+      .select();
+    alert(JSON.stringify(result));
+  };
     const result = await supabase
       .from('imoveis')
       .update({ alerta: novoAlerta })
