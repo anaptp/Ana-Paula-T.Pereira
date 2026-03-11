@@ -9,8 +9,8 @@ export const B = {
   white: "#ffffff",
   gray: "#f8f9fa",
   get logoUrl() {
-    return localStorage.getItem('app_logo') || "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?auto=format&fit=crop&w=200&h=200&q=80";
-  }
+  return "/logo.png";
+}
 };
 
 export const T: Record<string, any> = {
