@@ -23,14 +23,21 @@ export const supabase = supabaseUrl && supabaseAnonKey && isValidUrl(supabaseUrl
         getSession: async () => ({ data: { session: null }, error: null }),
         onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
         signInWithPassword: async () => ({ data: null, error: new Error("Supabase not configured or invalid URL") }),
-        signOut: async () => ({ error: null })
+        signUp: async () => ({ data: { user: null, session: null }, error: new Error("Supabase not configured") }),
+        signOut: async () => ({ error: null }),
+        updateUser: async () => ({ data: { user: null }, error: null })
       },
-      from: () => ({
-        select: () => ({
-          eq: () => ({
-            limit: async () => ({ data: [], error: null }),
-            order: async () => ({ data: [], error: null })
-          })
-        })
-      })
+      from: () => {
+        const filterChain: any = {
+          eq: () => filterChain,
+          limit: async () => ({ data: [], error: null }),
+          order: async () => ({ data: [], error: null }),
+          single: async () => ({ data: null, error: null }),
+        };
+        return {
+          select: () => filterChain,
+          upsert: async () => ({ data: null, error: null }),
+          insert: async () => ({ data: null, error: null }),
+        };
+      }
     } as any;

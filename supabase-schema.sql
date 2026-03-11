@@ -1,6 +1,57 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- 0. profiles (role-based access)
+CREATE TABLE profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'proprietario',
+  name TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Auto-create a profile row when a new user signs up
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, role, name)
+  VALUES (
+    NEW.id,
+    COALESCE(NEW.raw_user_meta_data->>'role', 'proprietario'),
+    COALESCE(NEW.raw_user_meta_data->>'name', '')
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+-- Users can read their own profile
+CREATE POLICY "Users can view own profile"
+  ON profiles FOR SELECT
+  USING (auth.uid() = id);
+
+-- Users can update their own profile (but not role)
+CREATE POLICY "Users can update own profile"
+  ON profiles FOR UPDATE
+  USING (auth.uid() = id);
+
+-- Users can insert their own profile (for upsert during signup)
+CREATE POLICY "Users can insert own profile"
+  ON profiles FOR INSERT
+  WITH CHECK (auth.uid() = id);
+
+-- Helper: check if the current user is an admin
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin'
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
 -- 1. imoveis
 CREATE TABLE imoveis (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -66,19 +117,19 @@ ALTER TABLE locacoes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE montagem_itens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE problemas_inesperados ENABLE ROW LEVEL SECURITY;
 
--- Create Policies
-CREATE POLICY "Users can view their own imoveis" 
-  ON imoveis FOR SELECT 
-  USING (auth.uid() = proprietario_id);
+-- Create Policies (owners see their own data, admins see everything)
+CREATE POLICY "Users can view their own imoveis"
+  ON imoveis FOR SELECT
+  USING (auth.uid() = proprietario_id OR public.is_admin());
 
-CREATE POLICY "Users can view locacoes of their imoveis" 
-  ON locacoes FOR SELECT 
-  USING (imovel_id IN (SELECT id FROM imoveis WHERE proprietario_id = auth.uid()));
+CREATE POLICY "Users can view locacoes of their imoveis"
+  ON locacoes FOR SELECT
+  USING (imovel_id IN (SELECT id FROM imoveis WHERE proprietario_id = auth.uid()) OR public.is_admin());
 
-CREATE POLICY "Users can view montagem_itens of their imoveis" 
-  ON montagem_itens FOR SELECT 
-  USING (imovel_id IN (SELECT id FROM imoveis WHERE proprietario_id = auth.uid()));
+CREATE POLICY "Users can view montagem_itens of their imoveis"
+  ON montagem_itens FOR SELECT
+  USING (imovel_id IN (SELECT id FROM imoveis WHERE proprietario_id = auth.uid()) OR public.is_admin());
 
-CREATE POLICY "Users can view problemas of their imoveis" 
-  ON problemas_inesperados FOR SELECT 
-  USING (imovel_id IN (SELECT id FROM imoveis WHERE proprietario_id = auth.uid()));
+CREATE POLICY "Users can view problemas of their imoveis"
+  ON problemas_inesperados FOR SELECT
+  USING (imovel_id IN (SELECT id FROM imoveis WHERE proprietario_id = auth.uid()) OR public.is_admin());

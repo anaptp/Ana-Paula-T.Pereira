@@ -1856,25 +1856,61 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isSupabaseConfigured) {
-      // Mock login/register
+      // Demo mode: mock login
       onLogin({ id: 'mock-id', email, user_metadata: { role, name: name || email.split('@')[0] } });
       return;
     }
-    
+
     setLoading(true);
     if (isRegister) {
-      const { error } = await supabase.auth.signUp({ 
-        email, 
+      const { data: signUpData, error } = await supabase.auth.signUp({
+        email,
         password: pw,
         options: { data: { role, name } }
       });
-      if (error) alert(error.message);
-      else alert("Cadastro realizado! Faça login.");
+      if (error) {
+        alert(error.message);
+      } else {
+        // Try to create profile entry with the selected role
+        if (signUpData?.user) {
+          try {
+            await supabase.from('profiles').upsert({
+              id: signUpData.user.id,
+              role: role,
+              name: name || email.split('@')[0]
+            });
+          } catch (_) { /* profiles table may not exist yet */ }
+        }
+        alert(lang === 'pt' ? "Cadastro realizado! Faça login." : "Account created! Please log in.");
+      }
       setIsRegister(false);
     } else {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password: pw });
-      if (error) alert(error.message);
-      else onLogin(data.user);
+      if (error) {
+        alert(error.message);
+      } else if (data?.user) {
+        // Fetch role from profiles table, fall back to user_metadata
+        let userRole = data.user.user_metadata?.role || 'proprietario';
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', data.user.id)
+            .single();
+          if (profile?.role) userRole = profile.role;
+        } catch (_) { /* profiles table may not exist */ }
+
+        // Validate role matches selected tab
+        if (role === 'admin' && userRole !== 'admin') {
+          alert(lang === 'pt'
+            ? 'Esta conta não possui permissão de administrador.'
+            : 'This account does not have administrator permission.');
+          await supabase.auth.signOut();
+        } else {
+          const augmented = { ...data.user, user_metadata: { ...data.user.user_metadata, role: userRole } };
+          onLogin(augmented);
+        }
+      }
     }
     setLoading(false);
   };
@@ -1967,15 +2003,40 @@ export default function App() {
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
   const isAdmin = user?.user_metadata?.role === 'admin';
 
+  // Helper: augment a Supabase user with role from profiles table
+  const augmentUserWithProfile = async (baseUser: any) => {
+    if (!baseUser) return null;
+    let userRole = baseUser.user_metadata?.role || 'proprietario';
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', baseUser.id)
+        .single();
+      if (profile?.role) userRole = profile.role;
+    } catch (_) { /* profiles table may not exist */ }
+    return { ...baseUser, user_metadata: { ...baseUser.user_metadata, role: userRole } };
+  };
+
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+
+    supabase.auth.getSession().then(async ({ data: { session } }: any) => {
+      if (session?.user) {
+        const augmented = await augmentUserWithProfile(session.user);
+        setUser(augmented);
+      } else {
+        setUser(null);
+      }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event: any, session: any) => {
+      if (session?.user) {
+        const augmented = await augmentUserWithProfile(session.user);
+        setUser(augmented);
+      } else {
+        setUser(null);
+      }
     });
 
     return () => subscription.unsubscribe();
