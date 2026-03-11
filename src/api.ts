@@ -90,6 +90,7 @@ export async function getDashboardData(userId: string, isAdmin: boolean = false)
         alerta: imovel.alerta || "",
         montagem: IMOVEL.montagem,
         locacoesPorMes
+        problemasInesperados: JSON.parse(imovel.problemas_inesperados || '[]'),
       });
     }
 
