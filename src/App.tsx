@@ -415,10 +415,12 @@ const MontagemView = ({ t, imovel, isAdmin }: any) => {
   const [isEditingProblemas, setIsEditingProblemas] = useState(false);
   const [novoProblema, setNovoProblema] = useState("");
 
-  const handleSaveProblemas = () => {
-    m.problemasInesperados = problemas;
-    setIsEditingProblemas(false);
-  };
+ const handleSaveProblemas = async () => {
+  m.problemasInesperados = problemas;
+  setIsEditingProblemas(false);
+  // Salva no Supabase
+  await supabase.from('imoveis').update({ problemas_inesperados: JSON.stringify(problemas) }).eq('id', imovel.id);
+};
 
   const handleAddProblema = () => {
     if (novoProblema.trim()) {
