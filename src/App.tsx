@@ -961,7 +961,7 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
     .eq("id", 1);
 
   alert("Logo atualizada!");
-};
+loadLogo();
 
   return (
     <div className="space-y-4">
