@@ -1083,17 +1083,21 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
 export default function App() {
   const [lang, setLang] = useState("pt");
   const [user, setUser] = useState<any>(null);
-  const loadLogo = async () => {
-  const { data } = await supabase
-    .from("app_config")
-    .select("logo_url")
-    .eq("id", 1)
-    .single();
+export default function App() {
 
-  if (data?.logo_url) {
-    B.logoUrl = data.logo_url;
-  }
-};
+  const loadLogo = async () => {
+
+    const { data } = await supabase
+      .from("app_config")
+      .select("logo_url")
+      .eq("id", 1)
+      .single();
+
+    if (data?.logo_url) {
+      B.logoUrl = data.logo_url;
+    }
+
+  };
   const [imoveisList, setImoveisList] = useState<any[]>([]);
   const [selectedImovelId, setSelectedImovelId] = useState<string | null>(null);
   const [tab, setTab] = useState("dashboard");
@@ -1101,6 +1105,11 @@ export default function App() {
   const [loadingData, setLoadingData] = useState(false);
   const [showNewImovelModal, setShowNewImovelModal] = useState(false);
   const [newImovelData, setNewImovelData] = useState({ nome: "", apelido: "", proprietarioEmail: "" });
+  
+  useEffect(() => {
+  loadLogo();
+}, []);
+  
   const [isAdmin, setIsAdmin] = useState(false);
   const t = T[lang];
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
