@@ -1083,8 +1083,6 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
 export default function App() {
   const [lang, setLang] = useState("pt");
   const [user, setUser] = useState<any>(null);
-export default function App() {
-
   const loadLogo = async () => {
 
     const { data } = await supabase
@@ -1098,6 +1096,9 @@ export default function App() {
     }
 
   };
+  useEffect(() => {
+  loadLogo();
+}, []);
   const [imoveisList, setImoveisList] = useState<any[]>([]);
   const [selectedImovelId, setSelectedImovelId] = useState<string | null>(null);
   const [tab, setTab] = useState("dashboard");
