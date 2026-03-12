@@ -53,7 +53,12 @@ const fetchGlobalLogo = async () => {
   try {
     const { data, error } = await supabase.storage.from('logo').list();
     if (data && data.length > 0) {
-      const logoFile = data.find(f => f.name.startsWith('app_logo'));
+      // Sort by updated_at to get the most recent one
+      const sortedFiles = data
+        .filter(f => f.name.startsWith('app_logo'))
+        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+        
+      const logoFile = sortedFiles[0];
       if (logoFile) {
         const { data: urlData } = supabase.storage.from('logo').getPublicUrl(logoFile.name);
         const newUrl = `${urlData.publicUrl}?t=${new Date(logoFile.updated_at).getTime()}`;
@@ -1934,7 +1939,7 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
           // Remove existing logos
           const { data: existingFiles } = await supabase.storage.from('logo').list();
           if (existingFiles) {
-            const filesToRemove = existingFiles.filter(f => f.name !== '.emptyFolderPlaceholder').map(f => f.name);
+            const filesToRemove = existingFiles.filter(f => f.name.startsWith('app_logo')).map(f => f.name);
             if (filesToRemove.length > 0) {
               await supabase.storage.from('logo').remove(filesToRemove);
             }
@@ -1967,6 +1972,7 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
           setAppLogo(base64);
           localStorage.setItem('app_logo', base64);
           window.dispatchEvent(new Event('logoUpdated'));
+          alert("Logo atualizada com sucesso! (Modo Local)");
         };
         reader.readAsDataURL(file);
       }
