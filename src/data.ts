@@ -8,9 +8,9 @@ export const B = {
   blue: "#005bb5", // Azul das ondas
   white: "#ffffff",
   gray: "#f8f9fa",
- get logoUrl() {
-  return "/logo.png";
-}
+  get logoUrl() {
+    return localStorage.getItem('app_logo') || "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?auto=format&fit=crop&w=200&h=200&q=80";
+  }
 };
 
 export const T: Record<string, any> = {
