@@ -315,7 +315,8 @@ const MontagemView = ({ t, imovel, isAdmin }: any) => {
     if (file) {
       const key = `nf_${ci}_${ii}`;
       if (isSupabaseConfigured) {
-        const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}`;
+        const fileExt = file.name.split('.').pop();
+const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}.${fileExt}`;
         const { error } = await supabase.storage.from('aptstays_files').upload(path, file, { upsert: true });
         if (error) {
           console.error(error);
