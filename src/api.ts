@@ -12,16 +12,20 @@ export async function getDashboardData(user: any, isAdmin: boolean = false) {
     // 1. Fetch Imoveis
     let query = supabase.from('imoveis').select('*');
     if (!isAdmin) {
+      console.log("User metadata:", user.user_metadata);
       if (user.user_metadata?.imovelName) {
+        console.log("Filtering by imovelName:", user.user_metadata.imovelName);
         // Filter by the exact property name provided during registration
         query = query.ilike('nome', `%${user.user_metadata.imovelName}%`);
       } else {
+        console.log("No imovelName found, falling back to proprietario_id:", user.id);
         // Fallback to ID if no name is set
         query = query.eq('proprietario_id', user.id);
       }
     }
     
     const { data: imoveis, error: errImovel } = await query;
+    console.log("Imoveis fetched:", imoveis);
 
     if (errImovel) {
       console.error("Error fetching imoveis:", errImovel);

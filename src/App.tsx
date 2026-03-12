@@ -2249,6 +2249,7 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
   const [isRegister, setIsRegister] = useState(false);
   const [name, setName] = useState("");
   const [imovelName, setImovelName] = useState("");
+  const [role, setRole] = useState("proprietario");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [loading, setLoading] = useState(false);
@@ -2258,7 +2259,7 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
     e.preventDefault();
     if (!isSupabaseConfigured) {
       // Mock login/register
-      onLogin({ id: 'mock-id', email, user_metadata: { role: "proprietario", name: name || email.split('@')[0], imovelName } });
+      onLogin({ id: 'mock-id', email, user_metadata: { role, name: name || email.split('@')[0], imovelName: role === 'proprietario' ? imovelName : undefined } });
       return;
     }
     
@@ -2267,7 +2268,7 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
       const { error } = await supabase.auth.signUp({ 
         email, 
         password: pw,
-        options: { data: { role: "proprietario", name, imovelName } }
+        options: { data: { role, name, imovelName: role === 'proprietario' ? imovelName : undefined } }
       });
       if (error) alert(error.message);
       else alert("Cadastro realizado! Faça login.");
@@ -2306,12 +2307,24 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
         <form onSubmit={handleAuthSubmit} className="space-y-3">
           {isRegister && (
             <>
+              <div className="flex gap-2 mb-2">
+                <button type="button" onClick={() => setRole("proprietario")}
+                  className={`flex-1 py-2 text-xs font-bold rounded-xl border-2 transition-colors ${role === "proprietario" ? "border-green-500 text-green-600 bg-green-50" : "border-gray-100 text-gray-400 bg-gray-50"}`}>
+                  Proprietário
+                </button>
+                <button type="button" onClick={() => setRole("admin")}
+                  className={`flex-1 py-2 text-xs font-bold rounded-xl border-2 transition-colors ${role === "admin" ? "border-blue-500 text-blue-600 bg-blue-50" : "border-gray-100 text-gray-400 bg-gray-50"}`}>
+                  Administrador
+                </button>
+              </div>
               <input value={name} onChange={e => setName(e.target.value)} placeholder={t.seuNome} type="text" required
                 className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
                 style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
-              <input value={imovelName} onChange={e => setImovelName(e.target.value)} placeholder="Nome do Imóvel" type="text" required
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
-                style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
+              {role === "proprietario" && (
+                <input value={imovelName} onChange={e => setImovelName(e.target.value)} placeholder="Nome do Imóvel" type="text" required
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
+                  style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
+              )}
             </>
           )}
           <input value={email} onChange={e => setEmail(e.target.value)} placeholder={t.email} type="email" required
@@ -2355,6 +2368,7 @@ export default function App() {
   const [showNewImovelModal, setShowNewImovelModal] = useState(false);
   const [newImovelData, setNewImovelData] = useState({ nome: "", apelido: "", proprietarioEmail: "" });
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isPendingAdmin, setIsPendingAdmin] = useState(false);
   const t = T[lang];
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
 
@@ -2379,6 +2393,17 @@ export default function App() {
       setLoadingData(true);
       const fetchRoleAndData = async () => {
         let userIsAdmin = user?.user_metadata?.role === 'admin' || user?.email === 'aptstays.rio@gmail.com';
+        
+        if (userIsAdmin && user?.email !== 'aptstays.rio@gmail.com') {
+          if (!user?.user_metadata?.isApprovedAdmin) {
+            setIsPendingAdmin(true);
+            setLoadingData(false);
+            return;
+          }
+        }
+        
+        setIsPendingAdmin(false);
+
         if (isSupabaseConfigured && !userIsAdmin) {
           try {
             const { data, error } = await supabase.from('profiles').select('role').eq('id', user.id).single();
@@ -2450,6 +2475,23 @@ export default function App() {
   
   const imovelData = imoveisList.find(i => i.id === selectedImovelId) || imoveisList[0];
 
+  if (isPendingAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-5" style={{ background: `linear-gradient(145deg, ${B.navy} 0%, ${B.green} 100%)` }}>
+        <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl text-center">
+          <Logo size={80} className="mx-auto mb-4" />
+          <h2 className="text-xl font-bold mb-2" style={{ color: B.navy }}>Aguardando Aprovação</h2>
+          <p className="text-gray-500 text-sm mb-6">
+            Sua conta de administrador foi criada, mas precisa ser aprovada pelo administrador principal antes de você poder acessar o painel.
+          </p>
+          <button onClick={handleLogout} className="px-4 py-2 rounded-lg font-semibold text-white w-full" style={{ background: B.navy }}>
+            Sair
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (loadingData) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -2460,17 +2502,17 @@ export default function App() {
 
   if (!imovelData) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6 text-center">
-        <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center text-gray-400 mb-4">
-          🏠
+      <div className="min-h-screen flex items-center justify-center p-5 bg-gray-50 text-center">
+        <div className="bg-white p-8 rounded-3xl shadow-lg max-w-sm w-full">
+          <Logo size={80} className="mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Nenhum imóvel encontrado</h2>
+          <p className="text-gray-500 text-sm mb-6">
+            Não encontramos nenhum imóvel associado ao seu perfil. Verifique se o nome do imóvel foi digitado corretamente durante o cadastro.
+          </p>
+          <button onClick={handleLogout} className="px-4 py-2 rounded-lg font-semibold text-white w-full" style={{ background: B.navy }}>
+            Sair e tentar novamente
+          </button>
         </div>
-        <h2 className="text-xl font-bold text-gray-800 mb-2">Nenhum imóvel encontrado</h2>
-        <p className="text-sm text-gray-500 max-w-sm mb-6">
-          Não encontramos nenhuma propriedade vinculada à sua conta. Se você é um proprietário, entre em contato com o administrador.
-        </p>
-        <button onClick={handleLogout} className="px-6 py-2 bg-gray-800 text-white rounded-xl font-semibold">
-          Sair
-        </button>
       </div>
     );
   }
