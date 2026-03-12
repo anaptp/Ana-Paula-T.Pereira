@@ -930,10 +930,38 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
     if (file) { const r = new FileReader(); r.onload = (ev: any) => { setAvatar(ev.target.result); localStorage.setItem(`avatar_${user.email}`, ev.target.result); if (isSupabaseConfigured && supabase) supabase.auth.updateUser({ data: { avatar_url: ev.target.result } }); }; r.readAsDataURL(file); }
   };
 
-  const handleLogoUpload = (e: any) => {
-    const file = e.target.files[0];
-    if (file) { const r = new FileReader(); r.onload = (ev: any) => { localStorage.setItem('app_logo', ev.target.result as string); window.location.reload(); }; r.readAsDataURL(file); }
-  };
+  const handleLogoUpload = async (e: any) => {
+  const file = e.target.files[0];
+
+  if (!file) return;
+
+  const filePath = `logo-${Date.now()}.png`;
+
+  // subir para o storage
+  const { error: uploadError } = await supabase.storage
+    .from("logos")
+    .upload(filePath, file, { upsert: true });
+
+  if (uploadError) {
+    alert("Erro ao enviar logo");
+    return;
+  }
+
+  // pegar URL pública
+  const { data } = supabase.storage
+    .from("logos")
+    .getPublicUrl(filePath);
+
+  const publicUrl = data.publicUrl;
+
+  // salvar URL na tabela
+  await supabase
+    .from("app_config")
+    .update({ logo_url: publicUrl })
+    .eq("id", 1);
+
+  alert("Logo atualizada!");
+};
 
   return (
     <div className="space-y-4">
@@ -1106,10 +1134,6 @@ export default function App() {
   const [loadingData, setLoadingData] = useState(false);
   const [showNewImovelModal, setShowNewImovelModal] = useState(false);
   const [newImovelData, setNewImovelData] = useState({ nome: "", apelido: "", proprietarioEmail: "" });
-  
-  useEffect(() => {
-  loadLogo();
-}, []);
   
   const [isAdmin, setIsAdmin] = useState(false);
   const t = T[lang];
