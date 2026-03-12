@@ -51,7 +51,13 @@ const fetchGlobalLogo = async () => {
   if (!isSupabaseConfigured) return;
   
   try {
-    const { data, error } = await supabase.storage.from('logo').list();
+    const { data, error } = await supabase.storage.from('logos').list();
+    
+    if (error) {
+      console.warn("Aviso ao buscar logo (pode ser que o bucket não exista ainda):", error.message);
+      return;
+    }
+
     if (data && data.length > 0) {
       // Sort by updated_at to get the most recent one
       const sortedFiles = data
@@ -60,7 +66,7 @@ const fetchGlobalLogo = async () => {
         
       const logoFile = sortedFiles[0];
       if (logoFile) {
-        const { data: urlData } = supabase.storage.from('logo').getPublicUrl(logoFile.name);
+        const { data: urlData } = supabase.storage.from('logos').getPublicUrl(logoFile.name);
         const newUrl = `${urlData.publicUrl}?t=${new Date(logoFile.updated_at).getTime()}`;
         if (newUrl !== localStorage.getItem('app_logo')) {
           localStorage.setItem('app_logo', newUrl);
@@ -1937,31 +1943,44 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
       if (isSupabaseConfigured && supabase) {
         try {
           // Remove existing logos
-          const { data: existingFiles } = await supabase.storage.from('logo').list();
+          const { data: existingFiles, error: listError } = await supabase.storage.from('logos').list();
+          
+          if (listError) {
+            if (listError.message.includes('Bucket not found')) {
+              alert("ERRO: O Bucket 'logos' não existe no Supabase.\n\nVá no Supabase > Storage e crie um BUCKET chamado 'logos' (tudo minúsculo). Não crie uma pasta dentro de outro bucket, crie um Bucket novo e marque-o como 'Public'.");
+              return;
+            }
+            console.warn("Aviso ao listar logos antigas:", listError.message);
+          }
+
           if (existingFiles) {
             const filesToRemove = existingFiles.filter(f => f.name.startsWith('app_logo')).map(f => f.name);
             if (filesToRemove.length > 0) {
-              await supabase.storage.from('logo').remove(filesToRemove);
+              await supabase.storage.from('logos').remove(filesToRemove);
             }
           }
 
           // Upload new
           const fileExt = file.name.split('.').pop();
           const fileName = `app_logo_${Date.now()}.${fileExt}`;
-          const { error } = await supabase.storage.from('logo').upload(fileName, file);
+          const { error } = await supabase.storage.from('logos').upload(fileName, file);
           
           if (error) {
-            alert("Erro ao salvar a logo no Supabase: " + error.message);
+            if (error.message.includes('row-level security')) {
+              alert("ERRO DE PERMISSÃO: Você precisa criar uma 'Policy' no Supabase Storage para o bucket 'logos' permitindo Insert/Update/Select.");
+            } else {
+              alert("Erro ao salvar a logo no Supabase: " + error.message);
+            }
             return;
           }
 
           // Fetch new URL
-          const { data: urlData } = supabase.storage.from('logo').getPublicUrl(fileName);
+          const { data: urlData } = supabase.storage.from('logos').getPublicUrl(fileName);
           const newUrl = `${urlData.publicUrl}?t=${Date.now()}`;
           localStorage.setItem('app_logo', newUrl);
           setAppLogo(newUrl);
           window.dispatchEvent(new Event('logoUpdated'));
-          alert("Logo atualizada com sucesso!");
+          alert("Logo atualizada com sucesso no Supabase!");
         } catch (err: any) {
           alert("Erro: " + err.message);
         }
