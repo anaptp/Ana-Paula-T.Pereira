@@ -31,6 +31,12 @@ const Logo = ({ size = 44 }: { size?: number }) => {
           objectFit: "cover"
         }} 
         referrerPolicy="no-referrer"
+        onError={(e) => {
+          // If the image fails to load (e.g., bucket not public), fallback to default
+          if (logoSrc !== B.logoUrl) {
+            setLogoSrc(B.logoUrl);
+          }
+        }}
       />
     );
   }
@@ -269,20 +275,31 @@ const MontagemView = ({ t, imovel, isAdmin }: any) => {
   useEffect(() => {
     const loadNfs = async () => {
       const loaded: Record<string, string> = {};
-      for (let ci = 0; ci < m.comodos.length; ci++) {
-        const c = m.comodos[ci];
-        for (let ii = 0; ii < c.itens.length; ii++) {
-          const key = `nf_${ci}_${ii}`;
-          if (isSupabaseConfigured) {
-            // Check if file exists by trying to download it or just getting public URL
-            // To avoid many requests, we could just assume it exists if we stored it, 
-            // but since we don't have a DB, we'll check localStorage as a cache or just try to fetch.
-            // For simplicity, we'll rely on localStorage to know if it was uploaded, 
-            // OR we can just fetch the public URL and see if it returns 200.
-            // Let's use localStorage to store the fact that a file exists.
-            const val = localStorage.getItem(key);
-            if (val) loaded[key] = val;
-          } else {
+      
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data, error } = await supabase.storage.from('aptstays_files').list('nfs');
+          if (data) {
+            const prefix = `${imovel.nome.replace(/\s+/g, '')}_`;
+            data.forEach(f => {
+              if (f.name.startsWith(prefix)) {
+                const parts = f.name.replace(prefix, '').split('_');
+                if (parts.length >= 2) {
+                  const ci = parts[0];
+                  const ii = parts[1].split('.')[0];
+                  loaded[`nf_${ci}_${ii}`] = 'supabase';
+                }
+              }
+            });
+          }
+        } catch (e) {
+          console.error("Erro ao carregar NFs do Supabase:", e);
+        }
+      } else {
+        for (let ci = 0; ci < m.comodos.length; ci++) {
+          const c = m.comodos[ci];
+          for (let ii = 0; ii < c.itens.length; ii++) {
+            const key = `nf_${ci}_${ii}`;
             const val = localStorage.getItem(key);
             if (val) loaded[key] = val;
           }
@@ -731,6 +748,9 @@ const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
       if (isSupabaseConfigured) {
         const path = `locacoes/${imovel.nome.replace(/\s+/g, '')}/${mes.mes}`;
         const { data, error } = await supabase.storage.from('aptstays_files').list(path);
+        if (error) {
+          console.error("Erro ao listar anexos de locações:", error);
+        }
         if (data && !error) {
           const loaded: Record<string, string> = {};
           data.forEach(file => {
@@ -1257,7 +1277,7 @@ const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
           <div className="grid grid-cols-3 gap-2 text-center text-xs mb-4">
             <div><p className="text-gray-400">{t.totalHospedes}</p><p className="font-bold text-gray-700">{mes.hospedes}</p></div>
             <div><p className="text-gray-400">{t.totalNoites}</p><p className="font-bold text-gray-700">{mes.noites}</p></div>
-            <div><p className="text-gray-400">{t.lucroTotal}</p><p className="font-bold" style={{ color: B.green }}>{fmtShort(mes.lucro)}</p></div>
+            <div><p className="text-gray-400">{t.lucroTotal}</p><p className="font-bold" style={{ color: B.green }}>{fmt(mes.lucro)}</p></div>
           </div>
 
           {/* Attachments Area */}
@@ -1405,13 +1425,19 @@ const DocumentosView = ({ t, imovel, isAdmin, isSupabaseConfigured }: any) => {
     if (isSupabaseConfigured && supabase) {
       const path = `documentos/${imovel.nome.replace(/\s+/g, '')}`;
       const { data, error } = await supabase.storage.from('aptstays_files').list(path);
+      if (error) {
+        console.error("Erro ao listar documentos:", error);
+      }
       if (data) {
         setDocs(data.filter(d => d.name !== '.emptyFolderPlaceholder'));
       }
       
       if (isAdmin) {
         const adminPath = `documentos_admin/${imovel.nome.replace(/\s+/g, '')}`;
-        const { data: adminData } = await supabase.storage.from('aptstays_files').list(adminPath);
+        const { data: adminData, error: adminError } = await supabase.storage.from('aptstays_files').list(adminPath);
+        if (adminError) {
+          console.error("Erro ao listar documentos admin:", adminError);
+        }
         if (adminData) {
           setAdminDocs(adminData.filter(d => d.name !== '.emptyFolderPlaceholder'));
         }
@@ -1885,10 +1911,10 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
   const [personalData, setPersonalData] = useState({
     nome: user?.user_metadata?.name || "",
     email: user?.email || "",
-    telefone: localStorage.getItem(`phone_${user?.email}`) || "",
-    prefixo: localStorage.getItem(`prefix_${user?.email}`) || "+55",
-    endereco: localStorage.getItem(`address_${user?.email}`) || "",
-    nascimento: localStorage.getItem(`birth_${user?.email}`) || "",
+    telefone: user?.user_metadata?.telefone || localStorage.getItem(`phone_${user?.email}`) || "",
+    prefixo: user?.user_metadata?.prefixo || localStorage.getItem(`prefix_${user?.email}`) || "+55",
+    endereco: user?.user_metadata?.endereco || localStorage.getItem(`address_${user?.email}`) || "",
+    nascimento: user?.user_metadata?.nascimento || localStorage.getItem(`birth_${user?.email}`) || "",
   });
 
   const prefixOptions = [
@@ -1909,32 +1935,71 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
     }
   }, []);
 
-  const handleSavePersonalData = () => {
+  const handleSavePersonalData = async () => {
     localStorage.setItem(`phone_${user?.email}`, personalData.telefone);
     localStorage.setItem(`prefix_${user?.email}`, personalData.prefixo);
     localStorage.setItem(`address_${user?.email}`, personalData.endereco);
     localStorage.setItem(`birth_${user?.email}`, personalData.nascimento);
+    
     if (isSupabaseConfigured && supabase) {
-      supabase.auth.updateUser({ data: { name: personalData.nome } });
+      const { error } = await supabase.auth.updateUser({ 
+        data: { 
+          name: personalData.nome,
+          telefone: personalData.telefone,
+          prefixo: personalData.prefixo,
+          endereco: personalData.endereco,
+          nascimento: personalData.nascimento
+        } 
+      });
+      if (error) {
+        alert("Erro ao salvar dados no Supabase: " + error.message);
+        return;
+      }
     }
     setIsEditingPersonalData(false);
     alert(t.dadosSalvos);
   };
 
-  const handlePhotoUpload = (e: any) => {
+  const handlePhotoUpload = async (e: any) => {
     const file = e.target.files[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev: any) => {
-        const base64 = ev.target.result;
-        setAvatar(base64);
-        localStorage.setItem(`avatar_${user.email}`, base64);
-        if (isSupabaseConfigured && supabase) {
-          supabase.auth.updateUser({ data: { avatar_url: base64 } });
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const fileExt = file.name.split('.').pop();
+          const fileName = `avatar_${user.id}_${Date.now()}.${fileExt}`;
+          
+          const { error } = await supabase.storage.from('avatars').upload(fileName, file, { upsert: true });
+          if (error) {
+            if (error.message.includes('Bucket not found')) {
+              alert("ERRO: O Bucket 'avatars' não existe no Supabase.\n\nCrie um BUCKET chamado 'avatars' (tudo minúsculo) e marque-o como 'Public'.");
+            } else {
+              alert("Erro ao salvar a foto: " + error.message);
+            }
+            e.target.value = '';
+            return;
+          }
+
+          const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+          const newUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+          
+          setAvatar(newUrl);
+          localStorage.setItem(`avatar_${user.email}`, newUrl);
+          await supabase.auth.updateUser({ data: { avatar_url: newUrl } });
+          
+        } catch (err: any) {
+          alert("Erro: " + err.message);
         }
-      };
-      reader.readAsDataURL(file);
+      } else {
+        const reader = new FileReader();
+        reader.onload = (ev: any) => {
+          const base64 = ev.target.result;
+          setAvatar(base64);
+          localStorage.setItem(`avatar_${user.email}`, base64);
+        };
+        reader.readAsDataURL(file);
+      }
     }
+    e.target.value = '';
   };
 
   const handleLogoUpload = async (e: any) => {
@@ -1948,6 +2013,7 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
           if (listError) {
             if (listError.message.includes('Bucket not found')) {
               alert("ERRO: O Bucket 'logos' não existe no Supabase.\n\nVá no Supabase > Storage e crie um BUCKET chamado 'logos' (tudo minúsculo). Não crie uma pasta dentro de outro bucket, crie um Bucket novo e marque-o como 'Public'.");
+              e.target.value = ''; // Clear input
               return;
             }
             console.warn("Aviso ao listar logos antigas:", listError.message);
@@ -1971,6 +2037,7 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
             } else {
               alert("Erro ao salvar a logo no Supabase: " + error.message);
             }
+            e.target.value = ''; // Clear input
             return;
           }
 
@@ -1996,6 +2063,7 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
         reader.readAsDataURL(file);
       }
     }
+    e.target.value = ''; // Clear input
   };
 
   return (
@@ -2179,8 +2247,8 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
 // ============================================================
 const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
   const [isRegister, setIsRegister] = useState(false);
-  const [role, setRole] = useState("proprietario"); // 'proprietario' | 'admin'
   const [name, setName] = useState("");
+  const [imovelName, setImovelName] = useState("");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [loading, setLoading] = useState(false);
@@ -2190,7 +2258,7 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
     e.preventDefault();
     if (!isSupabaseConfigured) {
       // Mock login/register
-      onLogin({ id: 'mock-id', email, user_metadata: { role, name: name || email.split('@')[0] } });
+      onLogin({ id: 'mock-id', email, user_metadata: { role: "proprietario", name: name || email.split('@')[0], imovelName } });
       return;
     }
     
@@ -2199,7 +2267,7 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
       const { error } = await supabase.auth.signUp({ 
         email, 
         password: pw,
-        options: { data: { role, name } }
+        options: { data: { role: "proprietario", name, imovelName } }
       });
       if (error) alert(error.message);
       else alert("Cadastro realizado! Faça login.");
@@ -2226,35 +2294,25 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
       </div>
 
       <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl relative">
-        
-        {/* Role Toggle */}
-        <div className="absolute top-4 left-0 w-full flex justify-center">
-          <div className="flex bg-gray-100 rounded-full p-1 shadow-inner">
-            <button type="button" onClick={() => setRole("proprietario")}
-              className={`text-[10px] font-bold px-3 py-1 rounded-full transition ${role === "proprietario" ? "bg-white shadow text-gray-800" : "text-gray-500"}`}>
-              {t.proprietario}
-            </button>
-            <button type="button" onClick={() => setRole("admin")}
-              className={`text-[10px] font-bold px-3 py-1 rounded-full transition ${role === "admin" ? "bg-white shadow text-gray-800" : "text-gray-500"}`}>
-              {t.administrador}
-            </button>
-          </div>
-        </div>
-
         <div className="flex flex-col items-center mb-8 mt-6 gap-3">
           <Logo size={120} />
           <div className="text-center">
             <h1 className="text-2xl font-bold" style={{ color: B.navy }}>Apt Stays</h1>
             <p className="text-gray-400 text-sm">
-              {role === "admin" ? t.portalAdmin : t.portalProp}
+              {t.portalProp}
             </p>
           </div>
         </div>
         <form onSubmit={handleAuthSubmit} className="space-y-3">
           {isRegister && (
-            <input value={name} onChange={e => setName(e.target.value)} placeholder={t.seuNome} type="text" required
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
-              style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
+            <>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder={t.seuNome} type="text" required
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
+                style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
+              <input value={imovelName} onChange={e => setImovelName(e.target.value)} placeholder="Nome do Imóvel" type="text" required
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
+                style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
+            </>
           )}
           <input value={email} onChange={e => setEmail(e.target.value)} placeholder={t.email} type="email" required
             className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
@@ -2320,8 +2378,8 @@ export default function App() {
     if (user) {
       setLoadingData(true);
       const fetchRoleAndData = async () => {
-        let userIsAdmin = false;
-        if (isSupabaseConfigured) {
+        let userIsAdmin = user?.user_metadata?.role === 'admin' || user?.email === 'aptstays.rio@gmail.com';
+        if (isSupabaseConfigured && !userIsAdmin) {
           try {
             const { data, error } = await supabase.from('profiles').select('role').eq('id', user.id).single();
             if (data && data.role === 'admin') {
@@ -2330,13 +2388,11 @@ export default function App() {
           } catch (e) {
             console.error("Error fetching role:", e);
           }
-        } else {
-          userIsAdmin = user?.user_metadata?.role === 'admin';
         }
         setIsAdmin(userIsAdmin);
         
         try {
-          const data = await getDashboardData(user.id, userIsAdmin);
+          const data = await getDashboardData(user, userIsAdmin);
           setImoveisList(data);
           if (data && data.length > 0) {
             setSelectedImovelId(data[0].id);

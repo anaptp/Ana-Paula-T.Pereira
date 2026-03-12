@@ -2,7 +2,7 @@
 import { supabase } from './supabase';
 import { IMOVEL } from './data';
 
-export async function getDashboardData(userId: string, isAdmin: boolean = false) {
+export async function getDashboardData(user: any, isAdmin: boolean = false) {
   if (!import.meta.env.VITE_SUPABASE_URL) {
     console.log("Supabase not configured");
     return [];
@@ -12,7 +12,13 @@ export async function getDashboardData(userId: string, isAdmin: boolean = false)
     // 1. Fetch Imoveis
     let query = supabase.from('imoveis').select('*');
     if (!isAdmin) {
-      query = query.eq('proprietario_id', userId);
+      if (user.user_metadata?.imovelName) {
+        // Filter by the exact property name provided during registration
+        query = query.ilike('nome', `%${user.user_metadata.imovelName}%`);
+      } else {
+        // Fallback to ID if no name is set
+        query = query.eq('proprietario_id', user.id);
+      }
     }
     
     const { data: imoveis, error: errImovel } = await query;
@@ -76,6 +82,9 @@ export async function getDashboardData(userId: string, isAdmin: boolean = false)
         locacoesMap.set("Mês Atual", { mes: "Mês Atual", hospedes: 0, noites: 0, lucro: 0, registros: [] });
       }
 
+      // Calculate total profit
+      const totalLucro = Array.from(locacoesMap.values()).reduce((sum, mes) => sum + mes.lucro, 0);
+
       results.push({
         id: imovel.id,
         nome: imovel.nome,
@@ -83,7 +92,10 @@ export async function getDashboardData(userId: string, isAdmin: boolean = false)
         proprietario: imovel.proprietario_id,
         comissaoPerc: Number(imovel.comissao_perc || 20), // Default to 20 if missing
         alerta: imovel.alerta || "", // Default to empty string if missing
-        montagem: IMOVEL.montagem, // Use fixed montagem from data.ts
+        montagem: {
+          ...IMOVEL.montagem,
+          totalPago: totalLucro // Set totalPago to the total profit from rentals
+        },
         locacoesPorMes: Array.from(locacoesMap.values())
       });
     }
