@@ -286,8 +286,10 @@ const MontagemView = ({ t, imovel, isAdmin }: any) => {
                 const parts = f.name.replace(prefix, '').split('_');
                 if (parts.length >= 2) {
                   const ci = parts[0];
-                  const ii = parts[1].split('.')[0];
-                  loaded[`nf_${ci}_${ii}`] = 'supabase';
+                  const iiWithExt = parts[1];
+const ii = iiWithExt.split('.')[0];
+                  const ext = iiWithExt.includes('.') ? iiWithExt.split('.')[1] : 'pdf';
+loaded[`nf_${ci}_${ii}`] = `supabase:${ext}`;
                 }
               }
             });
