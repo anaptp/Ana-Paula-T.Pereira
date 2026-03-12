@@ -12,10 +12,18 @@ import Papa from "papaparse";
 // BRAND — Apt Stays
 // ============================================================
 const Logo = ({ size = 44 }: { size?: number }) => {
-  if (B.logoUrl) {
+  const [logoSrc, setLogoSrc] = useState(localStorage.getItem('app_logo') || B.logoUrl);
+
+  useEffect(() => {
+    const handleLogoChange = () => setLogoSrc(localStorage.getItem('app_logo') || B.logoUrl);
+    window.addEventListener('logoUpdated', handleLogoChange);
+    return () => window.removeEventListener('logoUpdated', handleLogoChange);
+  }, []);
+
+  if (logoSrc) {
     return (
       <img 
-        src={B.logoUrl} 
+        src={logoSrc} 
         alt="Apt Stays Logo" 
         style={{
           width: size, height: size, borderRadius: "50%",
@@ -36,6 +44,28 @@ const Logo = ({ size = 44 }: { size?: number }) => {
       fontSize: size * 0.35, color: "white", fontWeight: "bold", fontStyle: "italic"
     }}>AS</div>
   );
+};
+
+const fetchGlobalLogo = async () => {
+  const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
+  if (!isSupabaseConfigured) return;
+  
+  try {
+    const { data, error } = await supabase.storage.from('logo').list();
+    if (data && data.length > 0) {
+      const logoFile = data.find(f => f.name.startsWith('app_logo'));
+      if (logoFile) {
+        const { data: urlData } = supabase.storage.from('logo').getPublicUrl(logoFile.name);
+        const newUrl = `${urlData.publicUrl}?t=${new Date(logoFile.updated_at).getTime()}`;
+        if (newUrl !== localStorage.getItem('app_logo')) {
+          localStorage.setItem('app_logo', newUrl);
+          window.dispatchEvent(new Event('logoUpdated'));
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Erro ao buscar logo:", e);
+  }
 };
 
 // ============================================================
@@ -1896,17 +1926,50 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
     }
   };
 
-  const handleLogoUpload = (e: any) => {
+  const handleLogoUpload = async (e: any) => {
     const file = e.target.files[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev: any) => {
-        const base64 = ev.target.result;
-        setAppLogo(base64);
-        localStorage.setItem('app_logo', base64);
-        window.location.reload(); // Reload to apply logo everywhere
-      };
-      reader.readAsDataURL(file);
+      if (isSupabaseConfigured && supabase) {
+        try {
+          // Remove existing logos
+          const { data: existingFiles } = await supabase.storage.from('logo').list();
+          if (existingFiles) {
+            const filesToRemove = existingFiles.filter(f => f.name !== '.emptyFolderPlaceholder').map(f => f.name);
+            if (filesToRemove.length > 0) {
+              await supabase.storage.from('logo').remove(filesToRemove);
+            }
+          }
+
+          // Upload new
+          const fileExt = file.name.split('.').pop();
+          const fileName = `app_logo_${Date.now()}.${fileExt}`;
+          const { error } = await supabase.storage.from('logo').upload(fileName, file);
+          
+          if (error) {
+            alert("Erro ao salvar a logo no Supabase: " + error.message);
+            return;
+          }
+
+          // Fetch new URL
+          const { data: urlData } = supabase.storage.from('logo').getPublicUrl(fileName);
+          const newUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+          localStorage.setItem('app_logo', newUrl);
+          setAppLogo(newUrl);
+          window.dispatchEvent(new Event('logoUpdated'));
+          alert("Logo atualizada com sucesso!");
+        } catch (err: any) {
+          alert("Erro: " + err.message);
+        }
+      } else {
+        const reader = new FileReader();
+        reader.onload = (ev: any) => {
+          const base64 = ev.target.result;
+          setAppLogo(base64);
+          localStorage.setItem('app_logo', base64);
+          window.dispatchEvent(new Event('logoUpdated'));
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
@@ -2214,6 +2277,8 @@ export default function App() {
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
+    
+    fetchGlobalLogo();
     
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
