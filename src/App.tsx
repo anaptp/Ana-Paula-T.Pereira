@@ -286,10 +286,8 @@ const MontagemView = ({ t, imovel, isAdmin }: any) => {
                 const parts = f.name.replace(prefix, '').split('_');
                 if (parts.length >= 2) {
                   const ci = parts[0];
-                  const iiWithExt = parts[1];
-const ii = iiWithExt.split('.')[0];
-                  const ext = iiWithExt.includes('.') ? iiWithExt.split('.')[1] : 'pdf';
-loaded[`nf_${ci}_${ii}`] = `supabase:${ext}`;
+                  const ii = parts[1].split('.')[0];
+                  loaded[`nf_${ci}_${ii}`] = 'supabase';
                 }
               }
             });
@@ -317,8 +315,7 @@ loaded[`nf_${ci}_${ii}`] = `supabase:${ext}`;
     if (file) {
       const key = `nf_${ci}_${ii}`;
       if (isSupabaseConfigured) {
-        const fileExt = file.name.split('.').pop();
-const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}.${fileExt}`;
+        const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}`;
         const { error } = await supabase.storage.from('aptstays_files').upload(path, file, { upsert: true });
         if (error) {
           console.error(error);
@@ -326,8 +323,8 @@ const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}.${fileExt}`;
           return;
         }
         // Store a flag in localStorage so we know it exists
-        localStorage.setItem(key, `supabase:${fileExt}`);
-setNfs(prev => ({ ...prev, [key]: `supabase:${fileExt}` }));
+        localStorage.setItem(key, 'supabase');
+        setNfs(prev => ({ ...prev, [key]: 'supabase' }));
       } else {
         const reader = new FileReader();
         reader.onload = (ev: any) => {
@@ -349,11 +346,10 @@ setNfs(prev => ({ ...prev, [key]: `supabase:${fileExt}` }));
     const val = nfs[key];
     if (!val) return;
 
-    if (val.startsWith('supabase') && isSupabaseConfigured) {
-  const ext = val.includes(':') ? val.split(':')[1] : 'pdf';
-  const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}.${ext}`;
-  const { data } = supabase.storage.from('aptstays_files').getPublicUrl(path);
-  window.open(data.publicUrl);
+    if (val === 'supabase' && isSupabaseConfigured) {
+      const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}`;
+      const { data } = supabase.storage.from('aptstays_files').getPublicUrl(path);
+      window.open(data.publicUrl);
     } else {
       const w = window.open("");
       if (w) {
@@ -369,11 +365,9 @@ setNfs(prev => ({ ...prev, [key]: `supabase:${fileExt}` }));
   const handleDeleteNF = async (ci: number, ii: number) => {
     const key = `nf_${ci}_${ii}`;
     
-    try {
-  const val = nfs[key] || '';
-  const ext = val.includes(':') ? val.split(':')[1] : 'pdf';
-  const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}.${ext}`;
-  await supabase.storage.from('aptstays_files').remove([path]);
+    if (isSupabaseConfigured) {
+      try {
+        const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}`;
         await supabase.storage.from('aptstays_files').remove([path]);
       } catch (e) {
         console.error("Erro ao excluir do Supabase:", e);
@@ -391,9 +385,8 @@ setNfs(prev => ({ ...prev, [key]: `supabase:${fileExt}` }));
   const getFileBase64 = async (key: string, ci: number, ii: number): Promise<string | null> => {
     const val = nfs[key];
     if (!val) return null;
-   if (val.startsWith('supabase') && isSupabaseConfigured) {
-  const ext = val.includes(':') ? val.split(':')[1] : 'pdf';
-  const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}.${ext}`;
+    if (val === 'supabase' && isSupabaseConfigured) {
+      const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}`;
       const { data, error } = await supabase.storage.from('aptstays_files').download(path);
       if (error || !data) return null;
       return new Promise<string>((resolve) => {
