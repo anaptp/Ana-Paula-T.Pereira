@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { B, T } from "./data";
-import { fmt, fmtShort, printMontagem, printLocacao, mergePdfs } from "./helpers";
+import { fmt, fmtShort, printMontagem, printLocacao, mergePdfs, createBlobUrl } from "./helpers";
 import { AlertCircle, CheckCircle2, Loader2, ChevronLeft, ChevronRight, Download, Printer, Trash2, FileText, Upload } from "lucide-react";
 import { supabase } from "./supabase";
 import { getDashboardData } from "./api";
@@ -11,6 +11,12 @@ import Papa from "papaparse";
 // ============================================================
 // BRAND — Apt Stays
 // ============================================================
+export const getSafeKey = (cNome: string, iNome: string) => {
+  const safeC = cNome.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  const safeI = iNome.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  return `${safeC}_${safeI}`;
+};
+
 const Logo = ({ size = 44, className = "" }: { size?: number, className?: string }) => {
   const [logoSrc, setLogoSrc] = useState(localStorage.getItem('app_logo') || B.logoUrl);
 
@@ -279,17 +285,13 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
       
       if (isSupabaseConfigured && supabase) {
         try {
-          const { data, error } = await supabase.storage.from('aptstays_files').list('nfs');
+          const { data, error } = await supabase.storage.from('aptstays_files').list('nfs', { limit: 1000 });
           if (data) {
             const prefix = `${imovel.nome.replace(/\s+/g, '')}_`;
             data.forEach(f => {
               if (f.name.startsWith(prefix)) {
-                const parts = f.name.replace(prefix, '').split('_');
-                if (parts.length >= 2) {
-                  const ci = parts[0];
-                  const ii = parts[1].split('.')[0];
-                  loaded[`nf_${ci}_${ii}`] = 'supabase';
-                }
+                const keyPart = f.name.replace(prefix, '').split('.')[0];
+                loaded[`nf_${keyPart}`] = f.name;
               }
             });
           }
@@ -311,12 +313,14 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
     loadNfs();
   }, [m, isSupabaseConfigured]);
 
-  const handleUploadNF = async (ci: number, ii: number, e: any) => {
+  const handleUploadNF = async (cNome: string, iNome: string, e: any) => {
     const file = e.target.files[0];
     if (file) {
-      const key = `nf_${ci}_${ii}`;
-      if (isSupabaseConfigured) {
-        const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}`;
+      const safeKey = getSafeKey(cNome, iNome);
+      const key = `nf_${safeKey}`;
+      if (isSupabaseConfigured && supabase) {
+        const filename = `${imovel.nome.replace(/\s+/g, '')}_${safeKey}`;
+        const path = `nfs/${filename}`;
         const { error } = await supabase.storage.from('aptstays_files').upload(path, file, { upsert: true, contentType: file.type });
         if (error) {
           console.error(error);
@@ -325,7 +329,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
         }
         // Store a flag in localStorage so we know it exists
         localStorage.setItem(key, 'supabase');
-        setNfs(prev => ({ ...prev, [key]: 'supabase' }));
+        setNfs(prev => ({ ...prev, [key]: filename }));
       } else {
         const reader = new FileReader();
         reader.onload = (ev: any) => {
@@ -342,46 +346,51 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
     }
   };
 
-  const handleViewNF = async (ci: number, ii: number) => {
-    const key = `nf_${ci}_${ii}`;
+  const handleViewNF = async (cNome: string, iNome: string, ci: number, ii: number) => {
+    const safeKey = getSafeKey(cNome, iNome);
+    const newKey = `nf_${safeKey}`;
+    const oldKey = `nf_${ci}_${ii}`;
+    const key = nfs[newKey] ? newKey : oldKey;
     const val = nfs[key];
     if (!val) return;
 
-    if (val === 'supabase' && isSupabaseConfigured) {
-      const base64 = await getFileBase64(key, ci, ii);
-      if (base64) {
-        const w = window.open("");
-        if (w) {
-          if (base64.startsWith('data:image')) {
-            w.document.write(`<img src="${base64}" style="max-width:100%;" />`);
-          } else if (base64.startsWith('data:application/pdf')) {
-            w.document.write(`<iframe src="${base64}" width="100%" height="100%" style="border:none;"></iframe>`);
-          } else {
-            w.document.write(`<p>Formato não suportado para visualização direta. <a href="${base64}" download="NF_${ci}_${ii}">Clique aqui para baixar</a></p>`);
-          }
-        }
-      } else {
-        alert("Erro ao carregar a NF do servidor.");
+    const base64 = await getFileBase64(key);
+    if (base64) {
+      const url = createBlobUrl(base64);
+      const w = window.open(url, "_blank");
+      if (!w) {
+        alert("Por favor, permita pop-ups para visualizar a NF.");
       }
     } else {
-      const w = window.open("");
-      if (w) {
-        if (val.startsWith('data:image')) {
-          w.document.write(`<img src="${val}" style="max-width:100%;" />`);
-        } else if (val.startsWith('data:application/pdf')) {
-          w.document.write(`<iframe src="${val}" width="100%" height="100%" style="border:none;"></iframe>`);
-        }
-      }
+      alert("Erro ao carregar a NF do servidor.");
     }
   };
 
-  const handleDeleteNF = async (ci: number, ii: number) => {
-    const key = `nf_${ci}_${ii}`;
+  const handleDeleteNF = async (cNome: string, iNome: string, ci: number, ii: number) => {
+    const safeKey = getSafeKey(cNome, iNome);
+    const newKey = `nf_${safeKey}`;
+    const oldKey = `nf_${ci}_${ii}`;
+    const key = nfs[newKey] ? newKey : oldKey;
     
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && supabase) {
       try {
-        const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}`;
-        const { error } = await supabase.storage.from('aptstays_files').remove([path]);
+        const pathPart = key.replace('nf_', '');
+        const prefix = `${imovel.nome.replace(/\s+/g, '')}_${pathPart}`;
+        
+        const { data } = await supabase.storage.from('aptstays_files').list('nfs', { search: prefix, limit: 100 });
+        
+        let pathsToRemove: string[] = [];
+        if (data && data.length > 0) {
+          pathsToRemove = data
+            .filter(f => f.name === prefix || f.name.startsWith(`${prefix}.`))
+            .map(f => `nfs/${f.name}`);
+        }
+        
+        if (pathsToRemove.length === 0) {
+          pathsToRemove = [`nfs/${prefix}`];
+        }
+        
+        const { error } = await supabase.storage.from('aptstays_files').remove(pathsToRemove);
         if (error && !error.message.includes('not found') && !error.message.includes('Not Found')) {
           console.error("Erro ao excluir do Supabase:", error);
           alert("Erro ao excluir a NF do servidor.");
@@ -400,11 +409,15 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
     });
   };
 
-  const getFileBase64 = async (key: string, ci: number, ii: number): Promise<string | null> => {
+  const getFileBase64 = async (key: string): Promise<string | null> => {
     const val = nfs[key];
     if (!val) return null;
-    if (val === 'supabase' && isSupabaseConfigured) {
-      const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}`;
+    if (val && !val.startsWith('data:') && isSupabaseConfigured && supabase) {
+      let filename = `${imovel.nome.replace(/\s+/g, '')}_${key.replace('nf_', '')}`;
+      if (val !== 'supabase') {
+        filename = val;
+      }
+      const path = `nfs/${filename}`;
       const { data, error } = await supabase.storage.from('aptstays_files').download(path);
       if (error || !data) return null;
       return new Promise<string>((resolve) => {
@@ -425,24 +438,20 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
     }
     try {
       const files: string[] = [];
+      const seen = new Set<string>();
       for (const key of keys) {
-        const [, ci, ii] = key.split('_').map(Number);
-        const base64 = await getFileBase64(key, ci, ii);
-        if (base64) files.push(base64);
+        const base64 = await getFileBase64(key);
+        if (base64 && !seen.has(base64)) {
+          seen.add(base64);
+          files.push(base64);
+        }
       }
       if (files.length === 0) {
         alert("Nenhum arquivo válido encontrado.");
         return;
       }
       const mergedBase64 = await mergePdfs(files);
-      const byteCharacters = atob(mergedBase64.split(',')[1]);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
+      const url = createBlobUrl(mergedBase64);
       const a = document.createElement('a');
       a.href = url;
       a.download = `NFs_Montagem.pdf`;
@@ -460,32 +469,38 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
       alert("Nenhuma NF anexada.");
       return;
     }
+    
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write("<html><body style='font-family:sans-serif;text-align:center;padding-top:50px;'><h2>Preparando documento para impressão, por favor aguarde...</h2></body></html>");
+    } else {
+      alert("Por favor, permita pop-ups para imprimir.");
+      return;
+    }
+
     try {
       const files: string[] = [];
+      const seen = new Set<string>();
       for (const key of keys) {
-        const [, ci, ii] = key.split('_').map(Number);
-        const base64 = await getFileBase64(key, ci, ii);
-        if (base64) files.push(base64);
+        const base64 = await getFileBase64(key);
+        if (base64 && !seen.has(base64)) {
+          seen.add(base64);
+          files.push(base64);
+        }
       }
       if (files.length === 0) {
+        if (w) w.close();
         alert("Nenhum arquivo válido encontrado.");
         return;
       }
       const mergedBase64 = await mergePdfs(files);
-      const byteCharacters = atob(mergedBase64.split(',')[1]);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const w = window.open(url);
-      if (!w) {
-        alert("Por favor, permita pop-ups para imprimir.");
+      const url = createBlobUrl(mergedBase64);
+      if (w) {
+        w.location.href = url;
       }
     } catch (e) {
       console.error(e);
+      if (w) w.close();
       alert("Erro ao processar arquivos.");
     }
   };
@@ -803,21 +818,21 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
                       
                       {/* NF Buttons */}
                       <div className="flex gap-1 mt-1">
-                        {nfs[`nf_${ci}_${ii}`] && (
+                        {(nfs[`nf_${getSafeKey(c.nome, item.nome)}`] || nfs[`nf_${ci}_${ii}`]) && (
                           <>
-                            <button onClick={() => handleViewNF(ci, ii)} className="text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded border border-blue-200">
+                            <button onClick={() => handleViewNF(c.nome, item.nome, ci, ii)} className="text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded border border-blue-200">
                               📄 Ver NF
                             </button>
                             {isAdmin && (
-                              <button onClick={() => handleDeleteNF(ci, ii)} className="text-[10px] px-2 py-1 bg-red-50 text-red-600 rounded border border-red-200">
+                              <button onClick={() => handleDeleteNF(c.nome, item.nome, ci, ii)} className="text-[10px] px-2 py-1 bg-red-50 text-red-600 rounded border border-red-200">
                                 🗑️
                               </button>
                             )}
                           </>
                         )}
-                        {isAdmin && !nfs[`nf_${ci}_${ii}`] && (
+                        {isAdmin && !(nfs[`nf_${getSafeKey(c.nome, item.nome)}`] || nfs[`nf_${ci}_${ii}`]) && (
                           <div className="relative">
-                            <input type="file" onChange={(e) => handleUploadNF(ci, ii, e)} className="hidden" id={`upload-nf-${ci}-${ii}`} />
+                            <input type="file" onChange={(e) => handleUploadNF(c.nome, item.nome, e)} className="hidden" id={`upload-nf-${ci}-${ii}`} />
                             <label htmlFor={`upload-nf-${ci}-${ii}`} className="cursor-pointer text-[10px] px-2 py-1 bg-gray-50 text-gray-600 rounded border border-gray-200 block">
                               📎 Anexar NF
                             </label>
@@ -1013,7 +1028,7 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
     const loadAttachments = async () => {
       if (isSupabaseConfigured) {
         const path = `locacoes/${imovel.nome.replace(/\s+/g, '')}/${mes.mes}`;
-        const { data, error } = await supabase.storage.from('aptstays_files').list(path);
+        const { data, error } = await supabase.storage.from('aptstays_files').list(path, { limit: 1000 });
         if (error) {
           console.error("Erro ao listar anexos de locações:", error);
           setAttachments({});
@@ -1090,12 +1105,10 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
   const handleView = async (plat: string) => {
     const base64 = await getPdfBase64(plat);
     if (base64) {
-      if (base64.startsWith('data:application/pdf')) {
-        const w = window.open("");
-        if (w) w.document.write(`<iframe src="${base64}" width="100%" height="100%" style="border:none;"></iframe>`);
-      } else {
-        const w = window.open("");
-        if (w) w.document.write(`<img src="${base64}" style="max-width:100%;" />`);
+      const url = createBlobUrl(base64);
+      const w = window.open(url, "_blank");
+      if (!w) {
+        alert("Por favor, permita pop-ups para visualizar o documento.");
       }
     }
   };
@@ -1108,25 +1121,31 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
     }
     try {
       const pdfs: string[] = [];
+      const seen = new Set<string>();
       for (const plat of plats) {
         const base64 = await getPdfBase64(plat);
-        if (base64) {
+        if (base64 && !seen.has(base64)) {
+          seen.add(base64);
           if (base64.startsWith('data:application/pdf')) {
             pdfs.push(base64);
           } else {
+            const url = createBlobUrl(base64);
             const a = document.createElement('a');
-            a.href = base64;
+            a.href = url;
             a.download = `Relatorio_${mes.mes}_${plat}`;
             a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
           }
         }
       }
       if (pdfs.length > 0) {
         const mergedBase64 = await mergePdfs(pdfs);
+        const url = createBlobUrl(mergedBase64);
         const a = document.createElement('a');
-        a.href = mergedBase64;
+        a.href = url;
         a.download = `Relatorios_${mes.mes}.pdf`;
         a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
     } catch (e) {
       console.error(e);
@@ -1140,31 +1159,45 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
       alert("Nenhum relatório anexado para este mês.");
       return;
     }
+    
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write("<html><body style='font-family:sans-serif;text-align:center;padding-top:50px;'><h2>Preparando documento para impressão, por favor aguarde...</h2></body></html>");
+    } else {
+      alert("Por favor, permita pop-ups para imprimir.");
+      return;
+    }
+
     try {
       const pdfs: string[] = [];
+      const seen = new Set<string>();
       for (const plat of plats) {
         const base64 = await getPdfBase64(plat);
-        if (base64) {
+        if (base64 && !seen.has(base64)) {
+          seen.add(base64);
           if (base64.startsWith('data:application/pdf')) {
             pdfs.push(base64);
           } else if (base64.startsWith('data:image')) {
-            const w = window.open("");
-            if (w) {
-              w.document.write(`<img src="${base64}" style="max-width:100%;" />`);
-              setTimeout(() => w.print(), 500);
+            const imgW = window.open("");
+            if (imgW) {
+              imgW.document.write(`<img src="${base64}" style="max-width:100%;" />`);
+              setTimeout(() => imgW.print(), 500);
             }
           }
         }
       }
       if (pdfs.length > 0) {
         const mergedBase64 = await mergePdfs(pdfs);
-        const w = window.open("");
+        const url = createBlobUrl(mergedBase64);
         if (w) {
-          w.document.write(`<iframe src="${mergedBase64}" width="100%" height="100%" style="border:none;"></iframe>`);
+          w.location.href = url;
         }
+      } else {
+        if (w) w.close();
       }
     } catch (e) {
       console.error(e);
+      if (w) w.close();
       alert("Erro ao processar arquivos.");
     }
   };
@@ -1714,7 +1747,7 @@ const DocumentosView = ({ t, imovel, isAdmin, isSupabaseConfigured }: any) => {
     setLoading(true);
     if (isSupabaseConfigured && supabase) {
       const path = `documentos/${imovel.nome.replace(/\s+/g, '')}`;
-      const { data, error } = await supabase.storage.from('aptstays_files').list(path);
+      const { data, error } = await supabase.storage.from('aptstays_files').list(path, { limit: 1000 });
       if (error) {
         console.error("Erro ao listar documentos:", error);
       }
@@ -1724,7 +1757,7 @@ const DocumentosView = ({ t, imovel, isAdmin, isSupabaseConfigured }: any) => {
       
       if (isAdmin) {
         const adminPath = `documentos_admin/${imovel.nome.replace(/\s+/g, '')}`;
-        const { data: adminData, error: adminError } = await supabase.storage.from('aptstays_files').list(adminPath);
+        const { data: adminData, error: adminError } = await supabase.storage.from('aptstays_files').list(adminPath, { limit: 1000 });
         if (adminError) {
           console.error("Erro ao listar documentos admin:", adminError);
         }
@@ -2216,6 +2249,20 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
     { code: '+33', country: 'fr', label: 'FR' },
     { code: '+49', country: 'de', label: 'DE' },
   ];
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value.replace(/\D/g, '');
+    if (personalData.prefixo === '+55') {
+      if (val.length > 11) val = val.slice(0, 11);
+      if (val.length > 2) {
+        val = `(${val.slice(0, 2)}) ${val.slice(2)}`;
+      }
+      if (val.length > 10) {
+        val = `${val.slice(0, 10)}-${val.slice(10)}`;
+      }
+    }
+    setPersonalData({ ...personalData, telefone: val });
+  };
+
   const selectedPrefix = prefixOptions.find(o => o.code === personalData.prefixo) || prefixOptions[0];
 
   useEffect(() => {
@@ -2456,7 +2503,7 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
                     </div>
                   </>
                 )}
-                <input type="tel" value={personalData.telefone} onChange={e => setPersonalData({...personalData, telefone: e.target.value})} className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1" style={{ '--tw-ring-color': B.green } as any} />
+                <input type="tel" value={personalData.telefone} onChange={handlePhoneChange} className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1" style={{ '--tw-ring-color': B.green } as any} />
               </div>
             </div>
             <div>
@@ -2585,21 +2632,20 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
         </button>
       </div>
 
-      {!isRegister && (
-        <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-10 flex bg-black/20 backdrop-blur-md p-0.5 rounded-lg border border-white/10 shadow-inner">
-          <button type="button" onClick={() => setLoginRole("proprietario")}
-            className={`px-3 py-1 text-[10px] font-semibold rounded-md transition-all duration-200 ${loginRole === "proprietario" ? "bg-white text-green-800 shadow-sm" : "text-white/70 hover:text-white"}`}>
-            Proprietário
-          </button>
-          <button type="button" onClick={() => setLoginRole("admin")}
-            className={`px-3 py-1 text-[10px] font-semibold rounded-md transition-all duration-200 ${loginRole === "admin" ? "bg-white text-blue-800 shadow-sm" : "text-white/70 hover:text-white"}`}>
-            Administrador
-          </button>
-        </div>
-      )}
-
       <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl relative mt-8">
-        <div className="flex flex-col items-center mb-8 mt-2 gap-3">
+        {!isRegister && (
+          <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 z-10 flex bg-gray-100 p-1 rounded-full border border-gray-200 shadow-sm">
+            <button type="button" onClick={() => setLoginRole("proprietario")}
+              className={`px-4 py-1.5 text-xs font-semibold rounded-full transition-all duration-200 ${loginRole === "proprietario" ? "bg-white text-green-700 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+              Proprietário
+            </button>
+            <button type="button" onClick={() => setLoginRole("admin")}
+              className={`px-4 py-1.5 text-xs font-semibold rounded-full transition-all duration-200 ${loginRole === "admin" ? "bg-white text-blue-700 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+              Administrador
+            </button>
+          </div>
+        )}
+        <div className="flex flex-col items-center mb-8 mt-4 gap-3">
           <Logo size={120} />
           <div className="text-center">
             <h1 className="text-2xl font-bold" style={{ color: B.navy }}>Apt Stays</h1>

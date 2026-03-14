@@ -8,6 +8,26 @@ export const fmtShort = (v: number | string) => {
   return `R$ ${num.toFixed(0)}`;
 };
 
+export const createBlobUrl = (base64: string): string => {
+  try {
+    const parts = base64.split(',');
+    if (parts.length < 2) return base64;
+    const mimeMatch = parts[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'application/pdf';
+    const byteCharacters = atob(parts[1]);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: mime });
+    return URL.createObjectURL(blob);
+  } catch (e) {
+    console.error("Error creating blob url", e);
+    return base64;
+  }
+};
+
 export const mergePdfs = async (base64Files: string[]): Promise<string> => {
   const mergedPdf = await PDFDocument.create();
   for (const base64 of base64Files) {
