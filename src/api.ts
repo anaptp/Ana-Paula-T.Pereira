@@ -66,6 +66,7 @@ export async function getDashboardData(user: any, isAdmin: boolean = false) {
         const comissaoCalculada = Number(loc.valor_liquido) * (comissaoPerc / 100);
 
         mesData.registros.push({
+          id: loc.id,
           hospede: loc.hospede,
           nHospedes: loc.n_hospedes,
           data: loc.data_entrada,

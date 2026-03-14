@@ -12,8 +12,8 @@ import Papa from "papaparse";
 // BRAND — Apt Stays
 // ============================================================
 export const getSafeKey = (cNome: string, iNome: string) => {
-  const safeC = cNome.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-  const safeI = iNome.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  const safeC = (cNome || "").replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  const safeI = (iNome || "").replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   return `${safeC}_${safeI}`;
 };
 
@@ -277,6 +277,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
   const totalItens = m.comodos.flatMap((c: any) => c.itens).filter((i: any) => !i.emprestado).reduce((a: any, i: any) => a + i.total, 0);
 
   const [nfs, setNfs] = useState<Record<string, string>>({});
+  const [isProcessingNfs, setIsProcessingNfs] = useState(false);
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
 
   useEffect(() => {
@@ -436,6 +437,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
       alert("Nenhuma NF anexada.");
       return;
     }
+    setIsProcessingNfs(true);
     try {
       const files: string[] = [];
       const seen = new Set<string>();
@@ -448,6 +450,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
       }
       if (files.length === 0) {
         alert("Nenhum arquivo válido encontrado.");
+        setIsProcessingNfs(false);
         return;
       }
       const mergedBase64 = await mergePdfs(files);
@@ -460,6 +463,8 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
     } catch (e) {
       console.error(e);
       alert("Erro ao processar arquivos.");
+    } finally {
+      setIsProcessingNfs(false);
     }
   };
 
@@ -470,14 +475,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
       return;
     }
     
-    const w = window.open("", "_blank");
-    if (w) {
-      w.document.write("<html><body style='font-family:sans-serif;text-align:center;padding-top:50px;'><h2>Preparando documento para impressão, por favor aguarde...</h2></body></html>");
-    } else {
-      alert("Por favor, permita pop-ups para imprimir.");
-      return;
-    }
-
+    setIsProcessingNfs(true);
     try {
       const files: string[] = [];
       const seen = new Set<string>();
@@ -489,19 +487,22 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
         }
       }
       if (files.length === 0) {
-        if (w) w.close();
         alert("Nenhum arquivo válido encontrado.");
+        setIsProcessingNfs(false);
         return;
       }
       const mergedBase64 = await mergePdfs(files);
       const url = createBlobUrl(mergedBase64);
-      if (w) {
-        w.location.href = url;
+      
+      const w = window.open(url, "_blank");
+      if (!w) {
+        alert("Por favor, permita pop-ups para imprimir.");
       }
     } catch (e) {
       console.error(e);
-      if (w) w.close();
       alert("Erro ao processar arquivos.");
+    } finally {
+      setIsProcessingNfs(false);
     }
   };
 
@@ -806,7 +807,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
                 {c.itens.map((item: any, ii: number) => (
                   <div key={ii} className={`px-4 py-3 flex justify-between items-center ${item.emprestado ? "opacity-50" : ""}`}>
                     <div className="flex-1 mr-3">
-                      <p className="text-xs font-medium text-gray-800">{item.item}{item.emprestado ? " ↩" : ""}</p>
+                      <p className="text-xs font-medium text-gray-800">{item.item || item.nome}{item.emprestado ? " ↩" : ""}</p>
                       <p className="text-xs text-gray-400">{item.datCompra} · {item.loja}{item.qtd > 1 ? ` · ${item.qtd}x` : ""}</p>
                     </div>
                     <div className="text-right flex flex-col items-end gap-1">
@@ -818,21 +819,21 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
                       
                       {/* NF Buttons */}
                       <div className="flex gap-1 mt-1">
-                        {(nfs[`nf_${getSafeKey(c.nome, item.nome)}`] || nfs[`nf_${ci}_${ii}`]) && (
+                        {(nfs[`nf_${getSafeKey(c.nome, item.item || item.nome)}`] || nfs[`nf_${ci}_${ii}`]) && (
                           <>
-                            <button onClick={() => handleViewNF(c.nome, item.nome, ci, ii)} className="text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded border border-blue-200">
+                            <button onClick={() => handleViewNF(c.nome, item.item || item.nome, ci, ii)} className="text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded border border-blue-200">
                               📄 Ver NF
                             </button>
                             {isAdmin && (
-                              <button onClick={() => handleDeleteNF(c.nome, item.nome, ci, ii)} className="text-[10px] px-2 py-1 bg-red-50 text-red-600 rounded border border-red-200">
+                              <button onClick={() => handleDeleteNF(c.nome, item.item || item.nome, ci, ii)} className="text-[10px] px-2 py-1 bg-red-50 text-red-600 rounded border border-red-200">
                                 🗑️
                               </button>
                             )}
                           </>
                         )}
-                        {isAdmin && !(nfs[`nf_${getSafeKey(c.nome, item.nome)}`] || nfs[`nf_${ci}_${ii}`]) && (
+                        {isAdmin && !(nfs[`nf_${getSafeKey(c.nome, item.item || item.nome)}`] || nfs[`nf_${ci}_${ii}`]) && (
                           <div className="relative">
-                            <input type="file" onChange={(e) => handleUploadNF(c.nome, item.nome, e)} className="hidden" id={`upload-nf-${ci}-${ii}`} />
+                            <input type="file" onChange={(e) => handleUploadNF(c.nome, item.item || item.nome, e)} className="hidden" id={`upload-nf-${ci}-${ii}`} />
                             <label htmlFor={`upload-nf-${ci}-${ii}`} className="cursor-pointer text-[10px] px-2 py-1 bg-gray-50 text-gray-600 rounded border border-gray-200 block">
                               📎 Anexar NF
                             </label>
@@ -914,15 +915,15 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
       {/* Ações NFs */}
       {Object.keys(nfs).length > 0 && (
         <div className="flex gap-2 pt-2">
-          <button onClick={handlePrintAllNfs}
-            className="flex-1 text-xs py-2 rounded-xl font-medium border flex justify-center items-center gap-1"
+          <button onClick={handlePrintAllNfs} disabled={isProcessingNfs}
+            className={`flex-1 text-xs py-2 rounded-xl font-medium border flex justify-center items-center gap-1 ${isProcessingNfs ? 'opacity-50 cursor-not-allowed' : ''}`}
             style={{ borderColor: B.green, color: B.green }}>
-            🖨️ {t.imprimirNfs}
+            {isProcessingNfs ? "⏳ Processando..." : `🖨️ ${t.imprimirNfs}`}
           </button>
-          <button onClick={handleDownloadAllNfs}
-            className="flex-1 text-xs py-2 rounded-xl font-medium text-white flex justify-center items-center gap-1"
+          <button onClick={handleDownloadAllNfs} disabled={isProcessingNfs}
+            className={`flex-1 text-xs py-2 rounded-xl font-medium text-white flex justify-center items-center gap-1 ${isProcessingNfs ? 'opacity-50 cursor-not-allowed' : ''}`}
             style={{ background: B.green }}>
-            ⬇️ {t.baixarNfs}
+            {isProcessingNfs ? "⏳ Processando..." : `⬇️ ${t.baixarNfs}`}
           </button>
         </div>
       )}
@@ -958,8 +959,221 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
   const totalLucroGeral = imovel.locacoesPorMes.reduce((a: any, m: any) => a + m.lucro, 0);
 
   const [attachments, setAttachments] = useState<Record<string, string>>({});
+  const [recibos, setRecibos] = useState<Record<string, string>>({});
+  const [isProcessingRecibos, setIsProcessingRecibos] = useState(false);
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
   
+  useEffect(() => {
+    const loadRecibos = async () => {
+      if (isSupabaseConfigured) {
+        try {
+          const { supabase } = await import('./supabase');
+          if (supabase) {
+            const { data, error } = await supabase.storage.from('aptstays_files').list(`recibos/${imovel.id}`, { limit: 1000 });
+            if (data && !error) {
+              const loaded: Record<string, string> = {};
+              data.forEach(file => {
+                if (file.name !== '.emptyFolderPlaceholder') {
+                  const regId = file.name.split('.')[0];
+                  loaded[regId] = file.name;
+                }
+              });
+              setRecibos(loaded);
+            }
+          }
+        } catch (e) {
+          console.error("Erro ao carregar recibos", e);
+        }
+      }
+    };
+    loadRecibos();
+  }, [imovel.id, isSupabaseConfigured]);
+  
+  const handleUploadRecibo = async (regId: string, e: any) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (isSupabaseConfigured) {
+      try {
+        const { supabase } = await import('./supabase');
+        if (supabase) {
+          const fileExt = file.name.split('.').pop();
+          const fileName = `${regId}.${fileExt}`;
+          const path = `recibos/${imovel.id}/${fileName}`;
+          
+          const { error } = await supabase.storage.from('aptstays_files').upload(path, file, { upsert: true });
+          if (error) {
+            alert("Erro ao salvar recibo: " + error.message);
+            return;
+          }
+          
+          setRecibos(prev => ({ ...prev, [regId]: fileName }));
+        }
+      } catch (err: any) {
+        alert("Erro: " + err.message);
+      }
+    } else {
+      alert("Supabase não configurado.");
+    }
+    e.target.value = '';
+  };
+
+  const handleViewRecibo = async (regId: string) => {
+    const fileName = recibos[regId];
+    if (!fileName) return;
+
+    if (isSupabaseConfigured) {
+      try {
+        const { supabase } = await import('./supabase');
+        if (supabase) {
+          const path = `recibos/${imovel.id}/${fileName}`;
+          const { data, error } = await supabase.storage.from('aptstays_files').download(path);
+          if (data) {
+            const url = URL.createObjectURL(data);
+            window.open(url);
+          } else if (error) {
+            alert("Erro ao baixar recibo: " + error.message);
+          }
+        }
+      } catch (err: any) {
+        alert("Erro: " + err.message);
+      }
+    }
+  };
+
+  const handleDeleteRecibo = async (regId: string) => {
+    if (!window.confirm("Tem certeza que deseja excluir este recibo?")) return;
+    
+    if (isSupabaseConfigured) {
+      try {
+        const { supabase } = await import('./supabase');
+        if (supabase) {
+          const { data, error } = await supabase.storage.from('aptstays_files').list(`recibos/${imovel.id}`, {
+            search: regId
+          });
+          
+          if (data && data.length > 0) {
+            const filesToRemove = data.map(f => `recibos/${imovel.id}/${f.name}`);
+            const { error: removeError } = await supabase.storage.from('aptstays_files').remove(filesToRemove);
+            if (removeError) {
+              alert("Erro ao excluir recibo: " + removeError.message);
+              return;
+            }
+          }
+          
+          const newRecibos = { ...recibos };
+          delete newRecibos[regId];
+          setRecibos(newRecibos);
+        }
+      } catch (err: any) {
+        alert("Erro: " + err.message);
+      }
+    }
+  };
+
+  const handlePrintAllRecibos = async () => {
+    if (Object.keys(recibos).length === 0) {
+      alert("Nenhum recibo anexado neste mês.");
+      return;
+    }
+    
+    setIsProcessingRecibos(true);
+    try {
+      const { supabase } = await import('./supabase');
+      if (!supabase) throw new Error("Supabase client not found");
+
+      const pdfsToMerge = [];
+      const { mergePdfs } = await import('./helpers');
+
+      for (const reg of mes.registros) {
+        if (recibos[reg.id]) {
+          const fileName = recibos[reg.id];
+          const path = `recibos/${imovel.id}/${fileName}`;
+          const { data, error } = await supabase.storage.from('aptstays_files').download(path);
+          if (data && !error) {
+            const base64 = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(data);
+            });
+            pdfsToMerge.push(base64);
+          }
+        }
+      }
+
+      if (pdfsToMerge.length > 0) {
+        const mergedPdfBytes = await mergePdfs(pdfsToMerge);
+        const blob = new Blob([mergedPdfBytes], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        const printWindow = window.open(url);
+        if (printWindow) {
+          printWindow.onload = () => {
+            printWindow.print();
+          };
+        } else {
+          alert("Por favor, permita pop-ups para imprimir os recibos.");
+        }
+      } else {
+        alert("Não foi possível carregar os recibos para impressão.");
+      }
+    } catch (e: any) {
+      console.error("Erro ao imprimir recibos:", e);
+      alert("Erro ao imprimir recibos: " + e.message);
+    } finally {
+      setIsProcessingRecibos(false);
+    }
+  };
+
+  const handleDownloadAllRecibos = async () => {
+    if (Object.keys(recibos).length === 0) {
+      alert("Nenhum recibo anexado neste mês.");
+      return;
+    }
+    
+    setIsProcessingRecibos(true);
+    try {
+      const { supabase } = await import('./supabase');
+      if (!supabase) throw new Error("Supabase client not found");
+
+      const pdfsToMerge = [];
+      const { mergePdfs } = await import('./helpers');
+
+      for (const reg of mes.registros) {
+        if (recibos[reg.id]) {
+          const fileName = recibos[reg.id];
+          const path = `recibos/${imovel.id}/${fileName}`;
+          const { data, error } = await supabase.storage.from('aptstays_files').download(path);
+          if (data && !error) {
+            const base64 = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(data);
+            });
+            pdfsToMerge.push(base64);
+          }
+        }
+      }
+
+      if (pdfsToMerge.length > 0) {
+        const mergedPdfBytes = await mergePdfs(pdfsToMerge);
+        const blob = new Blob([mergedPdfBytes], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `Recibos_${imovel.nome}_${mes.mes.replace(/\s+/g, '_')}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        alert("Não foi possível carregar os recibos para download.");
+      }
+    } catch (e: any) {
+      console.error("Erro ao baixar recibos:", e);
+      alert("Erro ao baixar recibos: " + e.message);
+    } finally {
+      setIsProcessingRecibos(false);
+    }
+  };
+
   const [plataformas, setPlataformas] = useState<Record<string, string[]>>(() => {
     const saved = localStorage.getItem(`plataformas_${imovel.nome}`);
     if (saved) {
@@ -1668,6 +1882,20 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
                 ⬇️ {t.baixarRelatorios}
               </button>
             </div>
+            {Object.keys(recibos).length > 0 && (
+              <div className="flex gap-2 mt-2">
+                <button onClick={handlePrintAllRecibos} disabled={isProcessingRecibos}
+                  className={`flex-1 text-xs py-2 rounded-xl font-medium border flex justify-center items-center gap-1 ${isProcessingRecibos ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  style={{ borderColor: B.green, color: B.green }}>
+                  {isProcessingRecibos ? "⏳ Processando..." : "🖨️ Imprimir Recibos"}
+                </button>
+                <button onClick={handleDownloadAllRecibos} disabled={isProcessingRecibos}
+                  className={`flex-1 text-xs py-2 rounded-xl font-medium text-white flex justify-center items-center gap-1 ${isProcessingRecibos ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  style={{ background: B.green }}>
+                  {isProcessingRecibos ? "⏳ Processando..." : "⬇️ Baixar Recibos"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1720,6 +1948,29 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
                 style={{ color: B.green }}>
                 <span>{t.lucro}</span><span>{fmt(reg.lucro)}</span>
               </div>
+              
+              {(reg.despesas > 0 || reg.hospede.toLowerCase().includes('despesa')) && isAdmin && (
+                <div className="pt-2 mt-2 border-t border-gray-100 flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Recibo:</span>
+                  <div className="flex items-center gap-2">
+                    {recibos[reg.id] ? (
+                      <>
+                        <button onClick={() => handleViewRecibo(reg.id)} className="text-xs text-blue-500 hover:underline flex items-center gap-1">
+                          <FileText size={12} /> Ver
+                        </button>
+                        <button onClick={() => handleDeleteRecibo(reg.id)} className="text-xs text-red-500 hover:underline flex items-center gap-1">
+                          <Trash2 size={12} />
+                        </button>
+                      </>
+                    ) : (
+                      <label className="text-xs text-blue-500 hover:underline cursor-pointer flex items-center gap-1">
+                        <Upload size={12} /> Anexar
+                        <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => handleUploadRecibo(reg.id, e)} />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           ))
@@ -1997,6 +2248,18 @@ const DocumentosView = ({ t, imovel, isAdmin, isSupabaseConfigured }: any) => {
 // ============================================================
 const InfoPropriedadeView = ({ t, imovel, isAdmin }: any) => {
   const [isEditing, setIsEditing] = useState(false);
+  const formatPhone = (val: string) => {
+    let clean = val.replace(/\D/g, '');
+    if (clean.length > 11) clean = clean.slice(0, 11);
+    if (clean.length > 2) {
+      clean = `(${clean.slice(0, 2)}) ${clean.slice(2)}`;
+    }
+    if (clean.length > 10) {
+      clean = `${clean.slice(0, 10)}-${clean.slice(10)}`;
+    }
+    return clean;
+  };
+
   const [info, setInfo] = useState(() => {
     const saved = localStorage.getItem(`infoprop_${imovel.id}`);
     return saved ? JSON.parse(saved) : {
@@ -2019,9 +2282,47 @@ const InfoPropriedadeView = ({ t, imovel, isAdmin }: any) => {
     };
   });
 
-  const handleSave = () => {
+  useEffect(() => {
+    const loadInfo = async () => {
+      const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
+      if (isSupabaseConfigured) {
+        try {
+          const { supabase } = await import('./supabase');
+          if (supabase) {
+            const path = `infoprop/${imovel.nome.replace(/\s+/g, '')}.json`;
+            const { data, error } = await supabase.storage.from('aptstays_files').download(path);
+            if (data && !error) {
+              const text = await data.text();
+              const parsed = JSON.parse(text);
+              setInfo(parsed);
+              localStorage.setItem(`infoprop_${imovel.id}`, text);
+            }
+          }
+        } catch (e) {
+          console.error("Erro ao carregar Info Propriedade do Supabase", e);
+        }
+      }
+    };
+    loadInfo();
+  }, [imovel.nome, imovel.id]);
+
+  const handleSave = async () => {
     localStorage.setItem(`infoprop_${imovel.id}`, JSON.stringify(info));
     setIsEditing(false);
+    
+    const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
+    if (isSupabaseConfigured) {
+      try {
+        const { supabase } = await import('./supabase');
+        if (supabase) {
+          const path = `infoprop/${imovel.nome.replace(/\s+/g, '')}.json`;
+          const blob = new Blob([JSON.stringify(info)], { type: 'application/json' });
+          await supabase.storage.from('aptstays_files').upload(path, blob, { upsert: true });
+        }
+      } catch (e) {
+        console.error("Erro ao salvar Info Propriedade no Supabase", e);
+      }
+    }
   };
 
   const handleAddFoto = (e: any) => {
@@ -2085,7 +2386,7 @@ const InfoPropriedadeView = ({ t, imovel, isAdmin }: any) => {
               <p className="text-xs font-semibold text-gray-600">Contato 1</p>
               <div className="grid grid-cols-2 gap-2">
                 <input type="text" placeholder="Nome" value={info.contato1Nome} onChange={e => setInfo({...info, contato1Nome: e.target.value})} className="border border-gray-200 rounded p-2 text-xs" />
-                <input type="text" placeholder="Telefone" value={info.contato1Tel} onChange={e => setInfo({...info, contato1Tel: e.target.value})} className="border border-gray-200 rounded p-2 text-xs" />
+                <input type="text" placeholder="Telefone" value={info.contato1Tel} onChange={e => setInfo({...info, contato1Tel: formatPhone(e.target.value)})} className="border border-gray-200 rounded p-2 text-xs" />
                 <input type="email" placeholder="E-mail" value={info.contato1Email} onChange={e => setInfo({...info, contato1Email: e.target.value})} className="col-span-2 border border-gray-200 rounded p-2 text-xs" />
               </div>
             </div>
@@ -2093,7 +2394,7 @@ const InfoPropriedadeView = ({ t, imovel, isAdmin }: any) => {
               <p className="text-xs font-semibold text-gray-600">Contato 2</p>
               <div className="grid grid-cols-2 gap-2">
                 <input type="text" placeholder="Nome" value={info.contato2Nome} onChange={e => setInfo({...info, contato2Nome: e.target.value})} className="border border-gray-200 rounded p-2 text-xs" />
-                <input type="text" placeholder="Telefone" value={info.contato2Tel} onChange={e => setInfo({...info, contato2Tel: e.target.value})} className="border border-gray-200 rounded p-2 text-xs" />
+                <input type="text" placeholder="Telefone" value={info.contato2Tel} onChange={e => setInfo({...info, contato2Tel: formatPhone(e.target.value)})} className="border border-gray-200 rounded p-2 text-xs" />
                 <input type="email" placeholder="E-mail" value={info.contato2Email} onChange={e => setInfo({...info, contato2Email: e.target.value})} className="col-span-2 border border-gray-200 rounded p-2 text-xs" />
               </div>
             </div>
@@ -2239,6 +2540,20 @@ const ProfileView = ({ t, user, lang, setLang, onLogout, isSupabaseConfigured, i
     endereco: user?.user_metadata?.endereco || localStorage.getItem(`address_${user?.email}`) || "",
     nascimento: user?.user_metadata?.nascimento || localStorage.getItem(`birth_${user?.email}`) || "",
   });
+
+  useEffect(() => {
+    if (user) {
+      setAvatar(user.user_metadata?.avatar_url || localStorage.getItem(`avatar_${user.email}`) || "");
+      setPersonalData({
+        nome: user.user_metadata?.name || "",
+        email: user.email || "",
+        telefone: user.user_metadata?.telefone || localStorage.getItem(`phone_${user.email}`) || "",
+        prefixo: user.user_metadata?.prefixo || localStorage.getItem(`prefix_${user.email}`) || "+55",
+        endereco: user.user_metadata?.endereco || localStorage.getItem(`address_${user.email}`) || "",
+        nascimento: user.user_metadata?.nascimento || localStorage.getItem(`birth_${user.email}`) || "",
+      });
+    }
+  }, [user]);
 
   const prefixOptions = [
     { code: '+55', country: 'br', label: 'BR' },
