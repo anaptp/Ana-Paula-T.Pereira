@@ -15,21 +15,12 @@ export async function getDashboardData(user: any, isAdmin: boolean = false) {
       console.log("User metadata:", user.user_metadata);
       if (user.user_metadata?.imovelName) {
         console.log("Filtering by imovelName:", user.user_metadata.imovelName);
-        query = query.ilike('nome', `%${user.user_metadata.imovelName.trim().toLowerCase()}%`);
+        // Filter by the exact property name provided during registration
+        query = query.ilike('nome', `%${user.user_metadata.imovelName}%`);
       } else {
-        try {
-          const { data: freshUser } = await supabase.auth.getUser();
-          const freshImovelName = freshUser?.user?.user_metadata?.imovelName;
-          if (freshImovelName) {
-            console.log("Filtering by freshImovelName:", freshImovelName);
-            query = query.ilike('nome', `%${freshImovelName.trim().toLowerCase()}%`);
-          } else {
-            console.log("No imovelName found, falling back to proprietario_id:", user.id);
-            query = query.eq('proprietario_id', user.id);
-          }
-        } catch {
-          query = query.eq('proprietario_id', user.id);
-        }
+        console.log("No imovelName found, falling back to proprietario_id:", user.id);
+        // Fallback to ID if no name is set
+        query = query.eq('proprietario_id', user.id);
       }
     }
     

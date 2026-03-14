@@ -1882,7 +1882,20 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
                 ⬇️ {t.baixarRelatorios}
               </button>
             </div>
-            
+            {Object.keys(recibos).length > 0 && (
+              <div className="flex gap-2 mt-2">
+                <button onClick={handlePrintAllRecibos} disabled={isProcessingRecibos}
+                  className={`flex-1 text-xs py-2 rounded-xl font-medium border flex justify-center items-center gap-1 ${isProcessingRecibos ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  style={{ borderColor: B.green, color: B.green }}>
+                  {isProcessingRecibos ? "⏳ Processando..." : "🖨️ Imprimir Recibos"}
+                </button>
+                <button onClick={handleDownloadAllRecibos} disabled={isProcessingRecibos}
+                  className={`flex-1 text-xs py-2 rounded-xl font-medium text-white flex justify-center items-center gap-1 ${isProcessingRecibos ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  style={{ background: B.green }}>
+                  {isProcessingRecibos ? "⏳ Processando..." : "⬇️ Baixar Recibos"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1936,39 +1949,28 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
                 <span>{t.lucro}</span><span>{fmt(reg.lucro)}</span>
               </div>
               
-              {(reg.despesas > 0 || reg.hospede.toLowerCase().includes('despesa')) && (
-  <div className="pt-2 mt-2 border-t border-gray-100 flex items-center justify-between">
-    <span className="text-xs text-gray-500">Recibo:</span>
-    <div className="flex items-center gap-2">
-      {isAdmin ? (
-        recibos[reg.id] ? (
-          <>
-            <button onClick={() => handleViewRecibo(reg.id)} className="text-xs text-blue-500 hover:underline flex items-center gap-1">
-              <FileText size={12} /> Ver
-            </button>
-            <button onClick={() => handleDeleteRecibo(reg.id)} className="text-xs text-red-500 hover:underline flex items-center gap-1">
-              <Trash2 size={12} />
-            </button>
-          </>
-        ) : (
-          <label className="text-xs text-blue-500 hover:underline cursor-pointer flex items-center gap-1">
-            <Upload size={12} /> Anexar
-            <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => handleUploadRecibo(reg.id, e)} />
-          </label>
-        )
-      ) : (
-        recibos[reg.id] && (
-          <button
-            onClick={() => handleViewRecibo(reg.id)}
-            className="text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded border border-blue-200 flex items-center gap-1"
-          >
-            <FileText size={11} /> Ver Recibo
-          </button>
-        )
-      )}
-    </div>
-  </div>
-)}
+              {(reg.despesas > 0 || reg.hospede.toLowerCase().includes('despesa')) && isAdmin && (
+                <div className="pt-2 mt-2 border-t border-gray-100 flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Recibo:</span>
+                  <div className="flex items-center gap-2">
+                    {recibos[reg.id] ? (
+                      <>
+                        <button onClick={() => handleViewRecibo(reg.id)} className="text-xs text-blue-500 hover:underline flex items-center gap-1">
+                          <FileText size={12} /> Ver
+                        </button>
+                        <button onClick={() => handleDeleteRecibo(reg.id)} className="text-xs text-red-500 hover:underline flex items-center gap-1">
+                          <Trash2 size={12} />
+                        </button>
+                      </>
+                    ) : (
+                      <label className="text-xs text-blue-500 hover:underline cursor-pointer flex items-center gap-1">
+                        <Upload size={12} /> Anexar
+                        <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => handleUploadRecibo(reg.id, e)} />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           ))
@@ -2904,8 +2906,6 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [loading, setLoading] = useState(false);
-const [showPassword, setShowPassword] = useState(false);
-const [showForgotPassword, setShowForgotPassword] = useState(false);
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -2997,15 +2997,9 @@ const [showForgotPassword, setShowForgotPassword] = useState(false);
           <input value={email} onChange={e => setEmail(e.target.value)} placeholder={t.email} type="email" required
             className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
             style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
-          <div className="relative">
-  <input value={pw} onChange={e => setPw(e.target.value)} placeholder={t.password} type={showPassword ? "text" : "password"} required
-    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 pr-10"
-    style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
-  <button type="button" onClick={() => setShowPassword(!showPassword)}
-    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-    {showPassword ? "🙈" : "👁️"}
-  </button>
-</div>
+          <input value={pw} onChange={e => setPw(e.target.value)} placeholder={t.password} type="password" required
+            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
+            style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
           <button type="submit" disabled={loading}
             className="w-full py-3 rounded-xl font-semibold text-white flex justify-center items-center gap-2"
             style={{ background: B.green }}>
@@ -3018,17 +3012,6 @@ const [showForgotPassword, setShowForgotPassword] = useState(false);
           )}
         </form>
         <div className="mt-4 text-center">
-          {!isRegister && (
-  <button type="button" onClick={async () => {
-    const emailVal = email.trim();
-    if (!emailVal) { alert("Digite seu e-mail primeiro."); return; }
-    const { error } = await supabase.auth.resetPasswordForEmail(emailVal);
-    if (error) alert("Erro: " + error.message);
-    else alert("E-mail de redefinição enviado! Verifique sua caixa de entrada.");
-  }} className="text-xs text-gray-400 underline block mb-2">
-    Esqueci minha senha
-  </button>
-)}
           <button onClick={() => setIsRegister(!isRegister)} className="text-xs text-gray-500 underline">
             {isRegister ? t.jaTenhoConta : t.criarConta}
           </button>
