@@ -2906,6 +2906,8 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [loading, setLoading] = useState(false);
+const [showPassword, setShowPassword] = useState(false);
+const [showForgotPassword, setShowForgotPassword] = useState(false);
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -2997,9 +2999,15 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
           <input value={email} onChange={e => setEmail(e.target.value)} placeholder={t.email} type="email" required
             className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
             style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
-          <input value={pw} onChange={e => setPw(e.target.value)} placeholder={t.password} type="password" required
-            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
-            style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
+          <div className="relative">
+  <input value={pw} onChange={e => setPw(e.target.value)} placeholder={t.password} type={showPassword ? "text" : "password"} required
+    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 pr-10"
+    style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
+  <button type="button" onClick={() => setShowPassword(!showPassword)}
+    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+    {showPassword ? "🙈" : "👁️"}
+  </button>
+</div>
           <button type="submit" disabled={loading}
             className="w-full py-3 rounded-xl font-semibold text-white flex justify-center items-center gap-2"
             style={{ background: B.green }}>
@@ -3012,6 +3020,17 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
           )}
         </form>
         <div className="mt-4 text-center">
+          {!isRegister && (
+  <button type="button" onClick={async () => {
+    const emailVal = email.trim();
+    if (!emailVal) { alert("Digite seu e-mail primeiro."); return; }
+    const { error } = await supabase.auth.resetPasswordForEmail(emailVal);
+    if (error) alert("Erro: " + error.message);
+    else alert("E-mail de redefinição enviado! Verifique sua caixa de entrada.");
+  }} className="text-xs text-gray-400 underline block mb-2">
+    Esqueci minha senha
+  </button>
+)}
           <button onClick={() => setIsRegister(!isRegister)} className="text-xs text-gray-500 underline">
             {isRegister ? t.jaTenhoConta : t.criarConta}
           </button>
