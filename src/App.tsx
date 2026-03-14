@@ -1882,20 +1882,7 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
                 ⬇️ {t.baixarRelatorios}
               </button>
             </div>
-            {Object.keys(recibos).length > 0 && (
-              <div className="flex gap-2 mt-2">
-                <button onClick={handlePrintAllRecibos} disabled={isProcessingRecibos}
-                  className={`flex-1 text-xs py-2 rounded-xl font-medium border flex justify-center items-center gap-1 ${isProcessingRecibos ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  style={{ borderColor: B.green, color: B.green }}>
-                  {isProcessingRecibos ? "⏳ Processando..." : "🖨️ Imprimir Recibos"}
-                </button>
-                <button onClick={handleDownloadAllRecibos} disabled={isProcessingRecibos}
-                  className={`flex-1 text-xs py-2 rounded-xl font-medium text-white flex justify-center items-center gap-1 ${isProcessingRecibos ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  style={{ background: B.green }}>
-                  {isProcessingRecibos ? "⏳ Processando..." : "⬇️ Baixar Recibos"}
-                </button>
-              </div>
-            )}
+            
           </div>
         </div>
       )}
@@ -1949,28 +1936,39 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
                 <span>{t.lucro}</span><span>{fmt(reg.lucro)}</span>
               </div>
               
-              {(reg.despesas > 0 || reg.hospede.toLowerCase().includes('despesa')) && isAdmin && (
-                <div className="pt-2 mt-2 border-t border-gray-100 flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Recibo:</span>
-                  <div className="flex items-center gap-2">
-                    {recibos[reg.id] ? (
-                      <>
-                        <button onClick={() => handleViewRecibo(reg.id)} className="text-xs text-blue-500 hover:underline flex items-center gap-1">
-                          <FileText size={12} /> Ver
-                        </button>
-                        <button onClick={() => handleDeleteRecibo(reg.id)} className="text-xs text-red-500 hover:underline flex items-center gap-1">
-                          <Trash2 size={12} />
-                        </button>
-                      </>
-                    ) : (
-                      <label className="text-xs text-blue-500 hover:underline cursor-pointer flex items-center gap-1">
-                        <Upload size={12} /> Anexar
-                        <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => handleUploadRecibo(reg.id, e)} />
-                      </label>
-                    )}
-                  </div>
-                </div>
-              )}
+              {(reg.despesas > 0 || reg.hospede.toLowerCase().includes('despesa')) && (
+  <div className="pt-2 mt-2 border-t border-gray-100 flex items-center justify-between">
+    <span className="text-xs text-gray-500">Recibo:</span>
+    <div className="flex items-center gap-2">
+      {isAdmin ? (
+        recibos[reg.id] ? (
+          <>
+            <button onClick={() => handleViewRecibo(reg.id)} className="text-xs text-blue-500 hover:underline flex items-center gap-1">
+              <FileText size={12} /> Ver
+            </button>
+            <button onClick={() => handleDeleteRecibo(reg.id)} className="text-xs text-red-500 hover:underline flex items-center gap-1">
+              <Trash2 size={12} />
+            </button>
+          </>
+        ) : (
+          <label className="text-xs text-blue-500 hover:underline cursor-pointer flex items-center gap-1">
+            <Upload size={12} /> Anexar
+            <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => handleUploadRecibo(reg.id, e)} />
+          </label>
+        )
+      ) : (
+        recibos[reg.id] && (
+          <button
+            onClick={() => handleViewRecibo(reg.id)}
+            className="text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded border border-blue-200 flex items-center gap-1"
+          >
+            <FileText size={11} /> Ver Recibo
+          </button>
+        )
+      )}
+    </div>
+  </div>
+)}
             </div>
           </div>
           ))
