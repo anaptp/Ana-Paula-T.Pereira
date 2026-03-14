@@ -317,7 +317,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
       const key = `nf_${ci}_${ii}`;
       if (isSupabaseConfigured) {
         const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}`;
-        const { error } = await supabase.storage.from('aptstays_files').upload(path, file, { upsert: true });
+        const { error } = await supabase.storage.from('aptstays_files').upload(path, file, { upsert: true, contentType: file.type });
         if (error) {
           console.error(error);
           alert("Erro no upload. Verifique se o bucket 'aptstays_files' existe e é público.");
@@ -348,9 +348,21 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
     if (!val) return;
 
     if (val === 'supabase' && isSupabaseConfigured) {
-      const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}`;
-      const { data } = supabase.storage.from('aptstays_files').getPublicUrl(path);
-      window.open(data.publicUrl);
+      const base64 = await getFileBase64(key, ci, ii);
+      if (base64) {
+        const w = window.open("");
+        if (w) {
+          if (base64.startsWith('data:image')) {
+            w.document.write(`<img src="${base64}" style="max-width:100%;" />`);
+          } else if (base64.startsWith('data:application/pdf')) {
+            w.document.write(`<iframe src="${base64}" width="100%" height="100%" style="border:none;"></iframe>`);
+          } else {
+            w.document.write(`<p>Formato não suportado para visualização direta. <a href="${base64}" download="NF_${ci}_${ii}">Clique aqui para baixar</a></p>`);
+          }
+        }
+      } else {
+        alert("Erro ao carregar a NF do servidor.");
+      }
     } else {
       const w = window.open("");
       if (w) {
@@ -369,7 +381,12 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
     if (isSupabaseConfigured) {
       try {
         const path = `nfs/${imovel.nome.replace(/\s+/g, '')}_${ci}_${ii}`;
-        await supabase.storage.from('aptstays_files').remove([path]);
+        const { error } = await supabase.storage.from('aptstays_files').remove([path]);
+        if (error && !error.message.includes('not found') && !error.message.includes('Not Found')) {
+          console.error("Erro ao excluir do Supabase:", error);
+          alert("Erro ao excluir a NF do servidor.");
+          return;
+        }
       } catch (e) {
         console.error("Erro ao excluir do Supabase:", e);
       }
@@ -418,10 +435,19 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
         return;
       }
       const mergedBase64 = await mergePdfs(files);
+      const byteCharacters = atob(mergedBase64.split(',')[1]);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = mergedBase64;
+      a.href = url;
       a.download = `NFs_Montagem.pdf`;
       a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
       console.error(e);
       alert("Erro ao processar arquivos.");
@@ -446,9 +472,17 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
         return;
       }
       const mergedBase64 = await mergePdfs(files);
-      const w = window.open("");
-      if (w) {
-        w.document.write(`<iframe src="${mergedBase64}" width="100%" height="100%" style="border:none;"></iframe>`);
+      const byteCharacters = atob(mergedBase64.split(',')[1]);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const w = window.open(url);
+      if (!w) {
+        alert("Por favor, permita pop-ups para imprimir.");
       }
     } catch (e) {
       console.error(e);
@@ -911,29 +945,51 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
   const [attachments, setAttachments] = useState<Record<string, string>>({});
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
   
-  const [plataformas, setPlataformas] = useState<string[]>(() => {
+  const [plataformas, setPlataformas] = useState<Record<string, string[]>>(() => {
     const saved = localStorage.getItem(`plataformas_${imovel.nome}`);
-    return saved ? JSON.parse(saved) : ["Airbnb", "Booking", "Direct"];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          // Migrate old array format to new object format
+          return {};
+        }
+        return parsed;
+      } catch (e) {
+        return {};
+      }
+    }
+    return {};
   });
-  
-  const allPlataformas = Array.from(new Set([...plataformas, ...Object.keys(attachments).filter(k => attachments[k])]));
+
+  const currentPlataformas = plataformas[mes.mes] || ["Airbnb", "Booking", "Direct"];
+  const allPlataformas = Array.from(new Set([...currentPlataformas, ...Object.keys(attachments).filter(k => attachments[k])]));
 
   const [isEditingPlataformas, setIsEditingPlataformas] = useState(false);
   const [novaPlataforma, setNovaPlataforma] = useState("");
 
   const handleAddPlataforma = () => {
-    if (novaPlataforma.trim() && !plataformas.includes(novaPlataforma.trim())) {
-      const newPlats = [...plataformas, novaPlataforma.trim()];
+    const plat = novaPlataforma.trim();
+    if (plat && !currentPlataformas.includes(plat)) {
+      const newPlats = { ...plataformas, [mes.mes]: [...currentPlataformas, plat] };
       setPlataformas(newPlats);
-      localStorage.setItem(`plataformas_${imovel.nome}`, JSON.stringify(newPlats));
+      try {
+        localStorage.setItem(`plataformas_${imovel.nome}`, JSON.stringify(newPlats));
+      } catch (e) {
+        console.error("Erro ao salvar plataformas no localStorage:", e);
+      }
       setNovaPlataforma("");
     }
   };
 
   const handleRemovePlataforma = async (plat: string) => {
-    const newPlats = plataformas.filter(p => p !== plat);
+    const newPlats = { ...plataformas, [mes.mes]: currentPlataformas.filter(p => p !== plat) };
     setPlataformas(newPlats);
-    localStorage.setItem(`plataformas_${imovel.nome}`, JSON.stringify(newPlats));
+    try {
+      localStorage.setItem(`plataformas_${imovel.nome}`, JSON.stringify(newPlats));
+    } catch (e) {
+      console.error("Erro ao salvar plataformas no localStorage:", e);
+    }
     
     // Remove attachment
     const key = `locacao_att_${mes.mes}_${plat}`;
@@ -977,7 +1033,7 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
         }
       } else {
         const loaded: Record<string, string> = {};
-        plataformas.forEach(plat => {
+        currentPlataformas.forEach(plat => {
           const key = `locacao_att_${mes.mes}_${plat}`;
           const val = localStorage.getItem(key);
           if (val) loaded[plat] = val;
@@ -1522,7 +1578,7 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
                 {isEditingPlataformas && (
                   <div className="mb-3 p-2 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
                     <div className="flex flex-wrap gap-1">
-                      {plataformas.map(plat => (
+                      {currentPlataformas.map(plat => (
                         <div key={plat} className="flex items-center gap-1 bg-white border border-gray-200 px-2 py-1 rounded text-[10px] font-semibold text-gray-700">
                           <span>{plat}</span>
                           <button onClick={() => handleRemovePlataforma(plat)} className="text-red-500 hover:text-red-700 ml-1">×</button>
@@ -2523,14 +2579,27 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
       {/* Language Toggle */}
       <div className="absolute top-6 right-6 z-10">
         <button onClick={() => setLang(lang === "pt" ? "en" : "pt")}
-          className="text-xs px-3 py-1.5 rounded-lg font-bold text-white transition-colors"
-          style={{ background: "rgba(255,255,255,0.2)" }}>
+          className="text-[10px] px-2 py-1 rounded-md font-bold text-white transition-colors border border-white/20"
+          style={{ background: "rgba(255,255,255,0.15)" }}>
           {lang === "pt" ? "EN" : "PT"}
         </button>
       </div>
 
-      <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl relative">
-        <div className="flex flex-col items-center mb-8 mt-6 gap-3">
+      {!isRegister && (
+        <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-10 flex bg-black/20 backdrop-blur-md p-0.5 rounded-lg border border-white/10 shadow-inner">
+          <button type="button" onClick={() => setLoginRole("proprietario")}
+            className={`px-3 py-1 text-[10px] font-semibold rounded-md transition-all duration-200 ${loginRole === "proprietario" ? "bg-white text-green-800 shadow-sm" : "text-white/70 hover:text-white"}`}>
+            Proprietário
+          </button>
+          <button type="button" onClick={() => setLoginRole("admin")}
+            className={`px-3 py-1 text-[10px] font-semibold rounded-md transition-all duration-200 ${loginRole === "admin" ? "bg-white text-blue-800 shadow-sm" : "text-white/70 hover:text-white"}`}>
+            Administrador
+          </button>
+        </div>
+      )}
+
+      <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl relative mt-8">
+        <div className="flex flex-col items-center mb-8 mt-2 gap-3">
           <Logo size={120} />
           <div className="text-center">
             <h1 className="text-2xl font-bold" style={{ color: B.navy }}>Apt Stays</h1>
@@ -2542,18 +2611,6 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
           </div>
         </div>
         <form onSubmit={handleAuthSubmit} className="space-y-3">
-          {!isRegister && (
-            <div className="flex gap-2 mb-4">
-              <button type="button" onClick={() => setLoginRole("proprietario")}
-                className={`flex-1 py-2 text-xs font-bold rounded-xl border-2 transition-colors ${loginRole === "proprietario" ? "border-green-500 text-green-600 bg-green-50" : "border-gray-100 text-gray-400 bg-gray-50"}`}>
-                Proprietário
-              </button>
-              <button type="button" onClick={() => setLoginRole("admin")}
-                className={`flex-1 py-2 text-xs font-bold rounded-xl border-2 transition-colors ${loginRole === "admin" ? "border-blue-500 text-blue-600 bg-blue-50" : "border-gray-100 text-gray-400 bg-gray-50"}`}>
-                Administrador
-              </button>
-            </div>
-          )}
           {isRegister && (
             <>
               <div className="flex gap-2 mb-2">
