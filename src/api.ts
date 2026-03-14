@@ -89,6 +89,22 @@ export async function getDashboardData(user: any, isAdmin: boolean = false) {
       // Calculate total profit
       const totalLucro = Array.from(locacoesMap.values()).reduce((sum, mes) => sum + mes.lucro, 0);
 
+      // Fetch montagem data
+      let montagemData = { ...IMOVEL.montagem };
+      try {
+        const path = `montagem/${imovel.nome.replace(/\s+/g, '')}.json`;
+        const { data: fileData, error: fileError } = await supabase.storage.from('aptstays_files').download(path);
+        if (fileData) {
+          const text = await fileData.text();
+          const parsed = JSON.parse(text);
+          if (parsed && parsed.comodos) {
+            montagemData = parsed;
+          }
+        }
+      } catch (e) {
+        console.error("Error loading montagem data", e);
+      }
+
       results.push({
         id: imovel.id,
         nome: imovel.nome,
@@ -97,7 +113,7 @@ export async function getDashboardData(user: any, isAdmin: boolean = false) {
         comissaoPerc: Number(imovel.comissao_perc || 20), // Default to 20 if missing
         alerta: imovel.alerta || "", // Default to empty string if missing
         montagem: {
-          ...IMOVEL.montagem,
+          ...montagemData,
           totalPago: totalLucro // Set totalPago to the total profit from rentals
         },
         locacoesPorMes: Array.from(locacoesMap.values())

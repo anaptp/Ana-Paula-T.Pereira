@@ -460,76 +460,132 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
   const [sheetUrlMontagem, setSheetUrlMontagem] = useState(localStorage.getItem(`sheet_montagem_${imovel.nome}`) || "");
 
   const processCsvData = async (csvText: string) => {
-    Papa.parse(csvText, {
-      header: false,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        try {
-          const rows = results.data as string[][];
-          const dataRows = rows.slice(1).filter(r => r.length >= 7 && r[0] && r[1]);
-          
-          const comodosMap: Record<string, any[]> = {};
-          let totalMontagem = 0;
-          
-          dataRows.forEach(row => {
-            const comodo = row[0];
-            const item = row[1];
-            const datCompra = row[2];
-            const precoStr = row[3].replace(/[^0-9,-]/g, '').replace(',', '.');
-            const preco = parseFloat(precoStr) || 0;
-            const qtd = parseInt(row[4], 10) || 1;
-            const loja = row[5];
-            const totalStr = row[6].replace(/[^0-9,-]/g, '').replace(',', '.');
-            const total = parseFloat(totalStr) || (preco * qtd);
+    return new Promise<void>((resolve, reject) => {
+      Papa.parse(csvText, {
+        header: false,
+        skipEmptyLines: true,
+        complete: async (results) => {
+          try {
+            const rows = results.data as string[][];
             
-            if (!comodosMap[comodo]) {
-              comodosMap[comodo] = [];
+            const comodosMap: Record<string, any[]> = {};
+            let totalMontagem = 0;
+            let currentComodo = "Geral";
+            let readingProblemas = false;
+            const problemasInesperados: string[] = [];
+            
+            for (let i = 0; i < rows.length; i++) {
+              const row = rows[i];
+              const col0 = row[0]?.trim() || "";
+              
+              if (!col0) continue;
+              
+              // Skip header rows
+              if (col0.toUpperCase().includes("APARTAMENTO") || col0 === "DESPESAS") {
+                continue;
+              }
+              
+              if (col0.toUpperCase().includes("PROBLEMAS INESPERADOS")) {
+                readingProblemas = true;
+                continue;
+              }
+              
+              if (readingProblemas) {
+                if (col0) problemasInesperados.push(col0);
+                continue;
+              }
+              
+              // Check if it's a room header (only col0 has value, or it's just a category)
+              // Usually, if col1 (Date) and col2 (Price) are empty, it's a category
+              const col1 = row[1]?.trim() || "";
+              const col2 = row[2]?.trim() || "";
+              const col5 = row[5]?.trim() || "";
+              
+              if (!col1 && !col2 && !col0.toUpperCase().includes("TOTAL")) {
+                currentComodo = col0;
+                if (!comodosMap[currentComodo]) {
+                  comodosMap[currentComodo] = [];
+                }
+                continue;
+              }
+              
+              // It's an item row
+              if (col0 && (col1 || col2 || col5)) {
+                const item = col0;
+                const datCompra = col1;
+                const precoStr = col2.replace(/[^0-9,-]/g, '').replace(',', '.');
+                const preco = parseFloat(precoStr) || 0;
+                const qtd = parseInt(row[3], 10) || 1;
+                const loja = row[4] || "";
+                const totalStr = (row[5] || "").replace(/[^0-9,-]/g, '').replace(',', '.');
+                const total = parseFloat(totalStr) || (preco * qtd);
+                
+                if (!comodosMap[currentComodo]) {
+                  comodosMap[currentComodo] = [];
+                }
+                
+                // Skip rows that are just totals or empty items
+                if (item.toUpperCase().includes("FALTA ME PAGAR") || item.toUpperCase() === "FALTA" || item.toUpperCase().includes("TOTAL MONTAGEM") || item.toUpperCase().includes("TOTAL PAGO")) {
+                  continue;
+                }
+                
+                const isEmprestado = (preco === 0 && total === 0) || datCompra.toLowerCase().includes("emprestado") || col2.toLowerCase().includes("emprestado");
+
+                comodosMap[currentComodo].push({
+                  item,
+                  datCompra: isEmprestado ? "" : datCompra,
+                  preco,
+                  qtd,
+                  loja,
+                  total,
+                  emprestado: isEmprestado
+                });
+                
+                totalMontagem += total;
+              }
             }
             
-            comodosMap[comodo].push({
-              item,
-              datCompra,
-              preco,
-              qtd,
-              loja,
-              total,
-              emprestado: preco === 0 && total === 0
-            });
+            const novosComodos = Object.keys(comodosMap).map(nome => ({
+              nome,
+              itens: comodosMap[nome]
+            })).filter(c => c.itens.length > 0);
             
-            totalMontagem += total;
-          });
-          
-          const novosComodos = Object.keys(comodosMap).map(nome => ({
-            nome,
-            itens: comodosMap[nome]
-          }));
-          
-          if (isSupabaseConfigured && supabase) {
-            const updatedMontagem = {
-              ...imovel.montagem,
-              comodos: novosComodos,
-              totalMontagem: totalMontagem
-            };
-            
-            const { error } = await supabase
-              .from('imoveis')
-              .update({ montagem: updatedMontagem })
-              .eq('id', imovel.id);
+            if (isSupabaseConfigured && supabase) {
+              const updatedMontagem = {
+                ...imovel.montagem,
+                comodos: novosComodos,
+                totalMontagem: totalMontagem,
+                problemasInesperados: problemasInesperados.length > 0 ? problemasInesperados : imovel.montagem.problemasInesperados
+              };
               
-            if (error) throw error;
-            
-            alert("Dados sincronizados com sucesso! A página será atualizada.");
-            if (onRefresh) onRefresh();
-          } else {
-            alert("Supabase não configurado. Não é possível salvar.");
+              const path = `montagem/${imovel.nome.replace(/\s+/g, '')}.json`;
+              const blob = new Blob([JSON.stringify(updatedMontagem)], { type: 'application/json' });
+              const { error } = await supabase.storage.from('aptstays_files').upload(path, blob, { upsert: true });
+                
+              if (error) throw error;
+              
+              alert("Dados sincronizados com sucesso! A página será atualizada.");
+              if (onRefresh) onRefresh();
+              resolve();
+            } else {
+              alert("Supabase não configurado. Não é possível salvar.");
+              resolve();
+            }
+          } catch (e: any) {
+            console.error(e);
+            alert(`Erro ao processar dados: ${e.message}`);
+            reject(e);
+          } finally {
+            setSyncingMontagem(false);
           }
-        } catch (e: any) {
-          console.error(e);
-          alert(`Erro ao processar dados: ${e.message}`);
-        } finally {
+        },
+        error: (error) => {
+          console.error(error);
+          alert(`Erro no parse do CSV: ${error.message}`);
           setSyncingMontagem(false);
+          reject(error);
         }
-      }
+      });
     });
   };
 
@@ -591,9 +647,19 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
   const [isEditingProblemas, setIsEditingProblemas] = useState(false);
   const [novoProblema, setNovoProblema] = useState("");
 
-  const handleSaveProblemas = () => {
+  const handleSaveProblemas = async () => {
     m.problemasInesperados = problemas;
     setIsEditingProblemas(false);
+    
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const path = `montagem/${imovel.nome.replace(/\s+/g, '')}.json`;
+        const blob = new Blob([JSON.stringify(m)], { type: 'application/json' });
+        await supabase.storage.from('aptstays_files').upload(path, blob, { upsert: true });
+      } catch (e) {
+        console.error("Erro ao salvar problemas", e);
+      }
+    }
   };
 
   const handleAddProblema = () => {
@@ -661,7 +727,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
               </label>
             </div>
           </div>
-          <p className="text-[10px] text-blue-600 mt-2 opacity-70">A planilha deve conter as colunas: Cômodo, Item, Data, Preço, Qtd, Loja, Total.</p>
+          <p className="text-[10px] text-blue-600 mt-2 opacity-70">A planilha deve seguir o formato padrão de montagem (Cômodo como título, seguido dos itens).</p>
         </div>
       )}
 
@@ -1525,8 +1591,8 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
           </div>
         ) : (
           [...mes.registros].sort((a, b) => {
-            const aIsExpense = a.valorLiquido === 0 && a.despesas > 0;
-            const bIsExpense = b.valorLiquido === 0 && b.despesas > 0;
+            const aIsExpense = a.hospede.toLowerCase().includes('despesa');
+            const bIsExpense = b.hospede.toLowerCase().includes('despesa');
             if (aIsExpense && !bIsExpense) return 1;
             if (!aIsExpense && bIsExpense) return -1;
             return 0;
