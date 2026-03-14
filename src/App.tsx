@@ -11,7 +11,7 @@ import Papa from "papaparse";
 // ============================================================
 // BRAND — Apt Stays
 // ============================================================
-const Logo = ({ size = 44 }: { size?: number }) => {
+const Logo = ({ size = 44, className = "" }: { size?: number, className?: string }) => {
   const [logoSrc, setLogoSrc] = useState(localStorage.getItem('app_logo') || B.logoUrl);
 
   useEffect(() => {
@@ -30,6 +30,7 @@ const Logo = ({ size = 44 }: { size?: number }) => {
           border: `2px solid ${B.green}`, flexShrink: 0,
           objectFit: "cover"
         }} 
+        className={className}
         referrerPolicy="no-referrer"
         onError={(e) => {
           // If the image fails to load (e.g., bucket not public), fallback to default
@@ -42,7 +43,7 @@ const Logo = ({ size = 44 }: { size?: number }) => {
   }
   
   return (
-    <div style={{
+    <div className={className} style={{
       width: size, height: size, borderRadius: "50%",
       background: `linear-gradient(135deg, ${B.navy}, ${B.green})`,
       display: "flex", alignItems: "center", justifyContent: "center",
@@ -264,7 +265,7 @@ const Dashboard = ({ t, lang, imovel, isAdmin }: any) => {
 // ============================================================
 // MONTAGEM VIEW
 // ============================================================
-const MontagemView = ({ t, imovel, isAdmin }: any) => {
+const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
   const [expandido, setExpandido] = useState<number | null>(null);
   const m = imovel.montagem;
   const totalItens = m.comodos.flatMap((c: any) => c.itens).filter((i: any) => !i.emprestado).reduce((a: any, i: any) => a + i.total, 0);
@@ -458,15 +459,132 @@ const MontagemView = ({ t, imovel, isAdmin }: any) => {
   const [syncingMontagem, setSyncingMontagem] = useState(false);
   const [sheetUrlMontagem, setSheetUrlMontagem] = useState(localStorage.getItem(`sheet_montagem_${imovel.nome}`) || "");
 
-  const handleSyncMontagem = () => {
+  const processCsvData = async (csvText: string) => {
+    Papa.parse(csvText, {
+      header: false,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const rows = results.data as string[][];
+          const dataRows = rows.slice(1).filter(r => r.length >= 7 && r[0] && r[1]);
+          
+          const comodosMap: Record<string, any[]> = {};
+          let totalMontagem = 0;
+          
+          dataRows.forEach(row => {
+            const comodo = row[0];
+            const item = row[1];
+            const datCompra = row[2];
+            const precoStr = row[3].replace(/[^0-9,-]/g, '').replace(',', '.');
+            const preco = parseFloat(precoStr) || 0;
+            const qtd = parseInt(row[4], 10) || 1;
+            const loja = row[5];
+            const totalStr = row[6].replace(/[^0-9,-]/g, '').replace(',', '.');
+            const total = parseFloat(totalStr) || (preco * qtd);
+            
+            if (!comodosMap[comodo]) {
+              comodosMap[comodo] = [];
+            }
+            
+            comodosMap[comodo].push({
+              item,
+              datCompra,
+              preco,
+              qtd,
+              loja,
+              total,
+              emprestado: preco === 0 && total === 0
+            });
+            
+            totalMontagem += total;
+          });
+          
+          const novosComodos = Object.keys(comodosMap).map(nome => ({
+            nome,
+            itens: comodosMap[nome]
+          }));
+          
+          if (isSupabaseConfigured && supabase) {
+            const updatedMontagem = {
+              ...imovel.montagem,
+              comodos: novosComodos,
+              totalMontagem: totalMontagem
+            };
+            
+            const { error } = await supabase
+              .from('imoveis')
+              .update({ montagem: updatedMontagem })
+              .eq('id', imovel.id);
+              
+            if (error) throw error;
+            
+            alert("Dados sincronizados com sucesso! A página será atualizada.");
+            if (onRefresh) onRefresh();
+          } else {
+            alert("Supabase não configurado. Não é possível salvar.");
+          }
+        } catch (e: any) {
+          console.error(e);
+          alert(`Erro ao processar dados: ${e.message}`);
+        } finally {
+          setSyncingMontagem(false);
+        }
+      }
+    });
+  };
+
+  const handleSyncMontagem = async () => {
     if (!sheetUrlMontagem) return;
     setSyncingMontagem(true);
     localStorage.setItem(`sheet_montagem_${imovel.nome}`, sheetUrlMontagem);
-    // Simulate sync delay
-    setTimeout(() => {
+    
+    try {
+      const match = sheetUrlMontagem.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if (!match) {
+        throw new Error("Link da planilha inválido. Certifique-se de que é um link do Google Sheets.");
+      }
+      const sheetId = match[1];
+      
+      const gidMatch = sheetUrlMontagem.match(/[#&]gid=([0-9]+)/);
+      const gid = gidMatch ? gidMatch[1] : "0";
+
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+      
+      const response = await fetch(csvUrl);
+      if (!response.ok) {
+        throw new Error("Não foi possível acessar a planilha. Verifique se ela está publicada na web ou se o link é público.");
+      }
+      
+      const csvText = await response.text();
+      await processCsvData(csvText);
+      
+    } catch (e: any) {
+      console.error(e);
+      alert(`Erro ao sincronizar: ${e.message}`);
+    } finally {
       setSyncingMontagem(false);
-      alert("Dados sincronizados com sucesso a partir da planilha!");
-    }, 1500);
+    }
+  };
+
+  const handleFileUploadMontagem = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setSyncingMontagem(true);
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const csvText = ev.target?.result as string;
+        await processCsvData(csvText);
+      } catch (e: any) {
+        console.error(e);
+        alert(`Erro ao processar arquivo: ${e.message}`);
+      } finally {
+        setSyncingMontagem(false);
+        e.target.value = '';
+      }
+    };
+    reader.readAsText(file);
   };
 
   const [problemas, setProblemas] = useState<string[]>(m.problemasInesperados || []);
@@ -502,25 +620,48 @@ const MontagemView = ({ t, imovel, isAdmin }: any) => {
 
       {isAdmin && (
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-blue-100 bg-blue-50/30">
-          <p className="text-sm font-semibold text-blue-800 mb-2">Sincronização com Google Sheets</p>
-          <div className="flex gap-2">
-            <input 
-              type="text" 
-              value={sheetUrlMontagem}
-              onChange={e => setSheetUrlMontagem(e.target.value)}
-              placeholder="Cole o link da planilha aqui..."
-              className="flex-1 border border-blue-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1"
-              style={{ '--tw-ring-color': '#3b82f6' } as any}
-            />
-            <button 
-              onClick={handleSyncMontagem}
-              disabled={syncingMontagem || !sheetUrlMontagem}
-              className="px-3 py-2 rounded-lg font-semibold text-white text-xs bg-blue-600 hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-1"
-            >
-              {syncingMontagem ? <Loader2 className="animate-spin" size={14} /> : "Sincronizar"}
-            </button>
+          <p className="text-sm font-semibold text-blue-800 mb-2">Sincronização com Google Sheets ou Arquivo CSV</p>
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-2">
+              <input 
+                type="text" 
+                value={sheetUrlMontagem}
+                onChange={e => setSheetUrlMontagem(e.target.value)}
+                placeholder="Cole o link da planilha aqui..."
+                className="flex-1 border border-blue-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1"
+                style={{ '--tw-ring-color': '#3b82f6' } as any}
+              />
+              <button 
+                onClick={handleSyncMontagem}
+                disabled={syncingMontagem || !sheetUrlMontagem}
+                className="px-3 py-2 rounded-lg font-semibold text-white text-xs bg-blue-600 hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-1"
+              >
+                {syncingMontagem ? <Loader2 className="animate-spin" size={14} /> : "Sincronizar Link"}
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-px bg-blue-200"></div>
+              <span className="text-xs text-blue-500 font-medium">OU</span>
+              <div className="flex-1 h-px bg-blue-200"></div>
+            </div>
+            <div>
+              <input 
+                type="file" 
+                accept=".csv"
+                onChange={handleFileUploadMontagem}
+                disabled={syncingMontagem}
+                id="csv-upload-montagem"
+                className="hidden"
+              />
+              <label 
+                htmlFor="csv-upload-montagem"
+                className={`w-full flex items-center justify-center gap-2 border border-blue-200 border-dashed rounded-lg px-3 py-2 text-xs font-medium text-blue-700 bg-white cursor-pointer hover:bg-blue-50 transition ${syncingMontagem ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <Upload size={14} /> Enviar arquivo CSV
+              </label>
+            </div>
           </div>
-          <p className="text-[10px] text-blue-600 mt-1 opacity-70">A planilha deve conter as colunas: Cômodo, Item, Data, Preço, Qtd, Loja, Total.</p>
+          <p className="text-[10px] text-blue-600 mt-2 opacity-70">A planilha deve conter as colunas: Cômodo, Item, Data, Preço, Qtd, Loja, Total.</p>
         </div>
       )}
 
@@ -685,7 +826,7 @@ const PlatBadge = ({ plat }: { plat: string }) => {
   );
 };
 
-const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
+const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
   // Extract unique years from locacoes
   const anosDisponiveis = Array.from(new Set(imovel.locacoesPorMes.map((m: any) => "20" + m.mes.split(" ")[1]))).sort();
   if (anosDisponiveis.length === 0) anosDisponiveis.push("2025"); // fallback
@@ -708,6 +849,9 @@ const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
     const saved = localStorage.getItem(`plataformas_${imovel.nome}`);
     return saved ? JSON.parse(saved) : ["Airbnb", "Booking", "Direct"];
   });
+  
+  const allPlataformas = Array.from(new Set([...plataformas, ...Object.keys(attachments).filter(k => attachments[k])]));
+
   const [isEditingPlataformas, setIsEditingPlataformas] = useState(false);
   const [novaPlataforma, setNovaPlataforma] = useState("");
 
@@ -750,8 +894,10 @@ const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
         const { data, error } = await supabase.storage.from('aptstays_files').list(path);
         if (error) {
           console.error("Erro ao listar anexos de locações:", error);
+          setAttachments({});
+          return;
         }
-        if (data && !error) {
+        if (data) {
           const loaded: Record<string, string> = {};
           data.forEach(file => {
             if (file.name !== '.emptyFolderPlaceholder') {
@@ -760,6 +906,8 @@ const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
             }
           });
           setAttachments(loaded);
+        } else {
+          setAttachments({});
         }
       } else {
         const loaded: Record<string, string> = {};
@@ -921,6 +1069,20 @@ const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
     let errorMessages: string[] = [];
 
     try {
+      if (isSupabaseConfigured && supabase) {
+        const { error: deleteError } = await supabase
+          .from('locacoes')
+          .delete()
+          .eq('imovel_id', imovel.id);
+          
+        if (deleteError) {
+          console.error("Erro ao apagar locações antigas:", deleteError);
+          alert("Erro ao apagar locações antigas. A importação foi cancelada.");
+          setImportingCsv(false);
+          return;
+        }
+      }
+
       for (const file of selectedFiles) {
         await new Promise<void>((resolve, reject) => {
           Papa.parse(file as any, {
@@ -1060,7 +1222,7 @@ const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
       }
       
       if (totalImportedCount > 0) {
-        window.location.reload(); // Reload to fetch new data
+        if (onRefresh) onRefresh();
       }
     } catch (err: any) {
       console.error("Erro geral na importação:", err);
@@ -1252,7 +1414,7 @@ const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
                         .eq('mes_ref', mes.mes);
                       if (error) throw error;
                       alert('Mês excluído com sucesso!');
-                      window.location.reload();
+                      if (onRefresh) onRefresh();
                     } catch (e: any) {
                       alert(`Erro ao excluir: ${e.message}`);
                     }
@@ -1318,7 +1480,7 @@ const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
                 )}
 
                 <div className="flex flex-wrap gap-2">
-                  {plataformas.map(plat => (
+                  {allPlataformas.map(plat => (
                     <div key={plat} className="relative">
                       <input type="file" onChange={(e) => handleUpload(plat, e)} className="hidden" id={`upload-${plat}`} />
                       <label htmlFor={`upload-${plat}`} className={`cursor-pointer text-[10px] font-semibold px-2 py-1 rounded border ${attachments[plat] ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
@@ -1330,7 +1492,7 @@ const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
               </div>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {plataformas.map(plat => attachments[plat] && (
+                {allPlataformas.map(plat => attachments[plat] && (
                   <button key={plat} onClick={() => handleView(plat)}
                     className="text-[10px] font-semibold px-2 py-1 rounded border bg-gray-50 border-gray-200 text-gray-600">
                     📄 {plat}
@@ -1362,7 +1524,13 @@ const LocacoesView = ({ t, imovel, isAdmin, lang }: any) => {
             {t.nenhumaLocacao}
           </div>
         ) : (
-          mes.registros.map((reg: any, i: number) => (
+          [...mes.registros].sort((a, b) => {
+            const aIsExpense = a.valorLiquido === 0 && a.despesas > 0;
+            const bIsExpense = b.valorLiquido === 0 && b.despesas > 0;
+            if (aIsExpense && !bIsExpense) return 1;
+            if (!aIsExpense && bIsExpense) return -1;
+            return 0;
+          }).map((reg: any, i: number) => (
           <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex justify-between items-start mb-3">
               <div>
@@ -2250,6 +2418,7 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
   const [name, setName] = useState("");
   const [imovelName, setImovelName] = useState("");
   const [role, setRole] = useState("proprietario");
+  const [loginRole, setLoginRole] = useState("proprietario");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [loading, setLoading] = useState(false);
@@ -2300,11 +2469,25 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
           <div className="text-center">
             <h1 className="text-2xl font-bold" style={{ color: B.navy }}>Apt Stays</h1>
             <p className="text-gray-400 text-sm">
-              {t.portalProp}
+              {isRegister 
+                ? (role === "proprietario" ? "Portal do Proprietário" : "Portal do Administrador")
+                : (loginRole === "proprietario" ? "Portal do Proprietário" : "Portal do Administrador")}
             </p>
           </div>
         </div>
         <form onSubmit={handleAuthSubmit} className="space-y-3">
+          {!isRegister && (
+            <div className="flex gap-2 mb-4">
+              <button type="button" onClick={() => setLoginRole("proprietario")}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl border-2 transition-colors ${loginRole === "proprietario" ? "border-green-500 text-green-600 bg-green-50" : "border-gray-100 text-gray-400 bg-gray-50"}`}>
+                Proprietário
+              </button>
+              <button type="button" onClick={() => setLoginRole("admin")}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl border-2 transition-colors ${loginRole === "admin" ? "border-blue-500 text-blue-600 bg-blue-50" : "border-gray-100 text-gray-400 bg-gray-50"}`}>
+                Administrador
+              </button>
+            </div>
+          )}
           {isRegister && (
             <>
               <div className="flex gap-2 mb-2">
@@ -2563,10 +2746,27 @@ export default function App() {
     { id: "profile", icon: "👤", label: t.profile },
   ];
 
+  const handleRefresh = async () => {
+    if (user) {
+      setLoadingData(true);
+      try {
+        const data = await getDashboardData(user, isAdmin);
+        setImoveisList(data);
+        if (data.length > 0 && !selectedImovelId) {
+          setSelectedImovelId(data[0].id);
+        }
+      } catch (e) {
+        console.error("Error refreshing data:", e);
+      } finally {
+        setLoadingData(false);
+      }
+    }
+  };
+
   const renderView = () => {
     if (tab === "dashboard") return <Dashboard t={t} lang={lang} imovel={imovelData} isAdmin={isAdmin} />;
-    if (tab === "montagem") return <MontagemView t={t} imovel={imovelData} isAdmin={isAdmin} />;
-    if (tab === "locacoes") return <LocacoesView t={t} imovel={imovelData} isAdmin={isAdmin} />;
+    if (tab === "montagem") return <MontagemView t={t} imovel={imovelData} isAdmin={isAdmin} onRefresh={handleRefresh} />;
+    if (tab === "locacoes") return <LocacoesView t={t} imovel={imovelData} isAdmin={isAdmin} lang={lang} onRefresh={handleRefresh} />;
     if (tab === "documentos") return <DocumentosView t={t} imovel={imovelData} isAdmin={isAdmin} isSupabaseConfigured={isSupabaseConfigured} />;
     if (tab === "infoprop") return <InfoPropriedadeView t={t} imovel={imovelData} isAdmin={isAdmin} />;
     if (tab === "profile") return <ProfileView t={t} user={user} lang={lang} setLang={setLang} onLogout={handleLogout} isSupabaseConfigured={isSupabaseConfigured} isAdmin={isAdmin} />;

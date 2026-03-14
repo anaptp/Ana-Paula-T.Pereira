@@ -11,30 +11,36 @@ export const fmtShort = (v: number | string) => {
 export const mergePdfs = async (base64Files: string[]): Promise<string> => {
   const mergedPdf = await PDFDocument.create();
   for (const base64 of base64Files) {
-    if (base64.startsWith('data:application/pdf')) {
-      const pdfBytes = Uint8Array.from(atob(base64.split(',')[1]), c => c.charCodeAt(0));
-      const pdfDoc = await PDFDocument.load(pdfBytes);
-      const copiedPages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
-      copiedPages.forEach((page) => mergedPdf.addPage(page));
-    } else if (base64.startsWith('data:image/')) {
-      const imageBytes = Uint8Array.from(atob(base64.split(',')[1]), c => c.charCodeAt(0));
-      let image;
-      if (base64.startsWith('data:image/png')) {
-        image = await mergedPdf.embedPng(imageBytes);
-      } else if (base64.startsWith('data:image/jpeg') || base64.startsWith('data:image/jpg')) {
-        image = await mergedPdf.embedJpg(imageBytes);
+    try {
+      if (base64.startsWith('data:application/pdf')) {
+        const res = await fetch(base64);
+        const pdfBytes = await res.arrayBuffer();
+        const pdfDoc = await PDFDocument.load(pdfBytes);
+        const copiedPages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
+        copiedPages.forEach((page) => mergedPdf.addPage(page));
+      } else if (base64.startsWith('data:image/')) {
+        const res = await fetch(base64);
+        const imageBytes = await res.arrayBuffer();
+        let image;
+        if (base64.startsWith('data:image/png')) {
+          image = await mergedPdf.embedPng(imageBytes);
+        } else if (base64.startsWith('data:image/jpeg') || base64.startsWith('data:image/jpg')) {
+          image = await mergedPdf.embedJpg(imageBytes);
+        }
+        if (image) {
+          // A4 size in points: 595.28 x 841.89
+          const page = mergedPdf.addPage([595.28, 841.89]);
+          const { width, height } = image.scaleToFit(595.28 - 40, 841.89 - 40);
+          page.drawImage(image, {
+            x: 20,
+            y: 841.89 - height - 20,
+            width,
+            height,
+          });
+        }
       }
-      if (image) {
-        // A4 size in points: 595.28 x 841.89
-        const page = mergedPdf.addPage([595.28, 841.89]);
-        const { width, height } = image.scaleToFit(595.28 - 40, 841.89 - 40);
-        page.drawImage(image, {
-          x: 20,
-          y: 841.89 - height - 20,
-          width,
-          height,
-        });
-      }
+    } catch (err) {
+      console.error("Erro ao mesclar arquivo:", err);
     }
   }
   const mergedPdfBytes = await mergedPdf.saveAsBase64({ dataUri: true });
