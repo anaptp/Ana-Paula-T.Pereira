@@ -3034,7 +3034,6 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
   <button onClick={() => setIsRegister(!isRegister)} className="text-xs text-gray-500 underline">
     {isRegister ? t.jaTenhoConta : t.criarConta}
   </button>
-</div>
         </div>
       </div>
     </div>
