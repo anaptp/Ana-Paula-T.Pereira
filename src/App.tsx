@@ -3101,7 +3101,18 @@ export default function App() {
           }
         }
         setIsAdmin(userIsAdmin);
-        
+        // Vincula o imóvel ao proprietario_id automaticamente
+if (!userIsAdmin && user.user_metadata?.imovelName) {
+  try {
+    await supabase
+      .from('imoveis')
+      .update({ proprietario_id: user.id })
+      .ilike('nome', `%${user.user_metadata.imovelName.trim()}%`)
+      .is('proprietario_id', null);
+  } catch (e) {
+    console.error("Erro ao vincular:", e);
+  }
+}
         try {
           const data = await getDashboardData(user, userIsAdmin);
           setImoveisList(data);
