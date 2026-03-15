@@ -3108,7 +3108,7 @@ if (!userIsAdmin && user.user_metadata?.imovelName) {
       .from('imoveis')
       .update({ proprietario_id: user.id })
       .ilike('nome', `%${user.user_metadata.imovelName.trim()}%`)
-      .is('proprietario_id', null);
+      .neq('proprietario_id', user.id);
   } catch (e) {
     console.error("Erro ao vincular:", e);
   }
