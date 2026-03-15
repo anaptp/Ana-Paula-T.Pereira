@@ -12,10 +12,13 @@ export async function getDashboardData(user: any, isAdmin: boolean = false) {
     // 1. Fetch Imoveis
     let query = supabase.from('imoveis').select('*');
     if (!isAdmin) {
-      console.log("User metadata:", user.user_metadata);
-      query = query.or(`nome.ilike.%${user.user_metadata?.imovelName || ''}%,proprietario_id.eq.${user.id}`);
-    }
-    
+  const imovelName = (user.user_metadata?.imovelName || '').trim().toLowerCase();
+  if (imovelName) {
+    query = query.ilike('nome', `%${imovelName}%`);
+  } else {
+    query = query.eq('proprietario_id', user.id);
+  }
+}
     const { data: imoveis, error: errImovel } = await query;
     console.log("Imoveis fetched:", imoveis);
 
