@@ -1030,7 +1030,11 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
           const { data, error } = await supabase.storage.from('aptstays_files').download(path);
           if (data) {
             const url = URL.createObjectURL(data);
-            window.open(url);
+            const a = document.createElement('a');
+a.href = url;
+a.target = '_blank';
+a.click();
+URL.revokeObjectURL(url);
           } else if (error) {
             alert("Erro ao baixar recibo: " + error.message);
           }
