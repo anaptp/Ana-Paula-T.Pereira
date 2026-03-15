@@ -2995,9 +2995,10 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
               )}
             </>
           )}
-          <input value={email} onChange={e => setEmail(e.target.value)} placeholder={t.email} type="email" required
-            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
-            <div className="relative">
+         <input value={email} onChange={e => setEmail(e.target.value)} placeholder={t.email} type="email" required
+  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
+  style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
+<div className="relative">
   <input value={pw} onChange={e => setPw(e.target.value)} placeholder={t.password} type={showPassword ? "text" : "password"} required
     className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 pr-10"
     style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
