@@ -273,12 +273,13 @@ const Dashboard = ({ t, lang, imovel, isAdmin }: any) => {
 // MONTAGEM VIEW
 // ============================================================
 const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
-  const [expandido, setExpandido] = useState<number | null>(null);
+  const [expandido, setExpandido] = useState<number | null>(0);
   const m = imovel.montagem;
   const totalItens = m.comodos.flatMap((c: any) => c.itens).filter((i: any) => !i.emprestado).reduce((a: any, i: any) => a + i.total, 0);
 
   const [nfs, setNfs] = useState<Record<string, string>>({});
   const [isProcessingNfs, setIsProcessingNfs] = useState(false);
+  const [nfProgress, setNfProgress] = useState("");
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
 
   useEffect(() => {
@@ -452,10 +453,20 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
       return;
     }
     setIsProcessingNfs(true);
+    setNfProgress("Preparando...");
     try {
       const files: string[] = [];
       const seen = new Set<string>();
-      const base64Results = await Promise.all(keys.map(key => getFileBase64(key)));
+      
+      let loaded = 0;
+      const base64Results = await Promise.all(keys.map(async (key) => {
+        const res = await getFileBase64(key);
+        loaded++;
+        setNfProgress(`Baixando ${loaded} de ${keys.length}...`);
+        return res;
+      }));
+      
+      setNfProgress("Mesclando arquivos...");
       for (const base64 of base64Results) {
         if (base64 && !seen.has(base64)) {
           seen.add(base64);
@@ -465,6 +476,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
       if (files.length === 0) {
         alert("Nenhum arquivo válido encontrado.");
         setIsProcessingNfs(false);
+        setNfProgress("");
         return;
       }
       const mergedBase64 = await mergePdfs(files);
@@ -479,6 +491,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
       alert("Erro ao processar arquivos.");
     } finally {
       setIsProcessingNfs(false);
+      setNfProgress("");
     }
   };
 
@@ -511,10 +524,20 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
     }
 
     setIsProcessingNfs(true);
+    setNfProgress("Preparando...");
     try {
       const files: string[] = [];
       const seen = new Set<string>();
-      const base64Results = await Promise.all(keys.map(key => getFileBase64(key)));
+      
+      let loaded = 0;
+      const base64Results = await Promise.all(keys.map(async (key) => {
+        const res = await getFileBase64(key);
+        loaded++;
+        setNfProgress(`Baixando ${loaded} de ${keys.length}...`);
+        return res;
+      }));
+      
+      setNfProgress("Mesclando arquivos...");
       for (const base64 of base64Results) {
         if (base64 && !seen.has(base64)) {
           seen.add(base64);
@@ -525,6 +548,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
         alert("Nenhum arquivo válido encontrado.");
         if (w) w.close();
         setIsProcessingNfs(false);
+        setNfProgress("");
         return;
       }
       const mergedBase64 = await mergePdfs(files);
@@ -539,6 +563,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
       if (w) w.close();
     } finally {
       setIsProcessingNfs(false);
+      setNfProgress("");
     }
   };
 
@@ -950,17 +975,22 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
 
       {/* Ações NFs */}
       {Object.keys(nfs).length > 0 && (
-        <div className="flex gap-2 pt-2">
-          <button onClick={handlePrintAllNfs} disabled={isProcessingNfs}
-            className={`tour-montagem-imprimir-nfs flex-1 text-xs py-2 rounded-xl font-medium border flex justify-center items-center gap-1 ${isProcessingNfs ? 'opacity-50 cursor-not-allowed' : ''}`}
-            style={{ borderColor: B.green, color: B.green }}>
-            {isProcessingNfs ? "⏳ Processando..." : `🖨️ ${t.imprimirNfs}`}
-          </button>
-          <button onClick={handleDownloadAllNfs} disabled={isProcessingNfs}
-            className={`flex-1 text-xs py-2 rounded-xl font-medium text-white flex justify-center items-center gap-1 ${isProcessingNfs ? 'opacity-50 cursor-not-allowed' : ''}`}
-            style={{ background: B.green }}>
-            {isProcessingNfs ? "⏳ Processando..." : `⬇️ ${t.baixarNfs}`}
-          </button>
+        <div className="flex flex-col gap-2 pt-2">
+          <div className="flex gap-2">
+            <button onClick={handlePrintAllNfs} disabled={isProcessingNfs}
+              className={`tour-montagem-imprimir-nfs flex-1 text-xs py-2 rounded-xl font-medium border flex justify-center items-center gap-1 ${isProcessingNfs ? 'opacity-50 cursor-not-allowed' : ''}`}
+              style={{ borderColor: B.green, color: B.green }}>
+              {isProcessingNfs ? "⏳ Processando..." : `🖨️ ${t.imprimirNfs}`}
+            </button>
+            <button onClick={handleDownloadAllNfs} disabled={isProcessingNfs}
+              className={`flex-1 text-xs py-2 rounded-xl font-medium text-white flex justify-center items-center gap-1 ${isProcessingNfs ? 'opacity-50 cursor-not-allowed' : ''}`}
+              style={{ background: B.green }}>
+              {isProcessingNfs ? "⏳ Processando..." : `⬇️ ${t.baixarNfs}`}
+            </button>
+          </div>
+          {isProcessingNfs && nfProgress && (
+            <p className="text-xs text-center text-gray-500 animate-pulse">{nfProgress}</p>
+          )}
         </div>
       )}
     </div>
@@ -3411,12 +3441,28 @@ export default function App() {
   };
 
   const renderView = () => {
-    if (tab === "dashboard") return <Dashboard t={t} lang={lang} imovel={imovelData} isAdmin={isAdmin} />;
-    if (tab === "montagem") return <MontagemView t={t} imovel={imovelData} isAdmin={isAdmin} onRefresh={handleRefresh} />;
-    if (tab === "locacoes") return <LocacoesView t={t} imovel={imovelData} isAdmin={isAdmin} lang={lang} onRefresh={handleRefresh} />;
-    if (tab === "documentos") return <DocumentosView t={t} imovel={imovelData} isAdmin={isAdmin} isSupabaseConfigured={isSupabaseConfigured} />;
-    if (tab === "infoprop") return <InfoPropriedadeView t={t} imovel={imovelData} isAdmin={isAdmin} />;
-    if (tab === "profile") return <ProfileView t={t} user={user} lang={lang} setLang={setLang} onLogout={handleLogout} isSupabaseConfigured={isSupabaseConfigured} isAdmin={isAdmin} />;
+    return (
+      <div className="w-full h-full relative">
+        <div className={tab === "dashboard" ? "block" : "hidden"}>
+          <Dashboard t={t} lang={lang} imovel={imovelData} isAdmin={isAdmin} />
+        </div>
+        <div className={tab === "montagem" ? "block" : "hidden"}>
+          <MontagemView t={t} imovel={imovelData} isAdmin={isAdmin} onRefresh={handleRefresh} />
+        </div>
+        <div className={tab === "locacoes" ? "block" : "hidden"}>
+          <LocacoesView t={t} imovel={imovelData} isAdmin={isAdmin} lang={lang} onRefresh={handleRefresh} />
+        </div>
+        <div className={tab === "documentos" ? "block" : "hidden"}>
+          <DocumentosView t={t} imovel={imovelData} isAdmin={isAdmin} isSupabaseConfigured={isSupabaseConfigured} />
+        </div>
+        <div className={tab === "infoprop" ? "block" : "hidden"}>
+          <InfoPropriedadeView t={t} imovel={imovelData} isAdmin={isAdmin} />
+        </div>
+        <div className={tab === "profile" ? "block" : "hidden"}>
+          <ProfileView t={t} user={user} lang={lang} setLang={setLang} onLogout={handleLogout} isSupabaseConfigured={isSupabaseConfigured} isAdmin={isAdmin} />
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -3427,6 +3473,8 @@ export default function App() {
         continuous
         showProgress
         showSkipButton
+        disableOverlayClose
+        disableScrolling
         callback={handleJoyrideCallback}
         styles={{
           options: {
@@ -3496,9 +3544,7 @@ export default function App() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-4 pb-24">
-        <div key={tab} className="animate-fade-in">
-          {renderView()}
-        </div>
+        {renderView()}
       </div>
 
       {/* Bottom Nav */}
