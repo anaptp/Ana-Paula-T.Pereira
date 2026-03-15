@@ -2906,6 +2906,7 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
