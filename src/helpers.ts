@@ -28,9 +28,25 @@ export const createBlobUrl = (base64: string): string => {
   }
 };
 
-export const mergePdfs = async (base64Files: string[]): Promise<string> => {
+export const mergePdfs = async (
+  items: string[], 
+  fetcher?: (item: string) => Promise<string | null>,
+  onProgress?: (msg: string) => void
+): Promise<string> => {
   const mergedPdf = await PDFDocument.create();
-  for (const base64 of base64Files) {
+  for (let i = 0; i < items.length; i++) {
+    if (onProgress) onProgress(`Processando ${i + 1} de ${items.length}...`);
+    // Yield to main thread to allow UI updates
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    let base64 = items[i];
+    if (fetcher) {
+      if (onProgress) onProgress(`Baixando ${i + 1} de ${items.length}...`);
+      const fetched = await fetcher(base64);
+      if (!fetched) continue;
+      base64 = fetched;
+    }
+
     try {
       if (base64.startsWith('data:application/pdf')) {
         const res = await fetch(base64);
@@ -63,6 +79,10 @@ export const mergePdfs = async (base64Files: string[]): Promise<string> => {
       console.error("Erro ao mesclar arquivo:", err);
     }
   }
+  
+  if (onProgress) onProgress("Gerando arquivo final...");
+  await new Promise(resolve => setTimeout(resolve, 50));
+  
   const mergedPdfBytes = await mergedPdf.saveAsBase64({ dataUri: true });
   return mergedPdfBytes;
 };

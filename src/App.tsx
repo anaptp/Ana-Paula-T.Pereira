@@ -448,38 +448,30 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
     }
     const keys = Array.from(keysToPrint);
 
-    if (keys.length === 0) {
+    const uniqueVals = new Set<string>();
+    const uniqueKeys: string[] = [];
+    for (const key of keys) {
+      const val = nfs[key];
+      if (val && !uniqueVals.has(val)) {
+        uniqueVals.add(val);
+        uniqueKeys.push(key);
+      }
+    }
+
+    if (uniqueKeys.length === 0) {
       alert("Nenhuma NF anexada aos itens atuais.");
       return;
     }
     setIsProcessingNfs(true);
     setNfProgress("Preparando...");
     try {
-      const files: string[] = [];
-      const seen = new Set<string>();
-      
-      let loaded = 0;
-      const base64Results = await Promise.all(keys.map(async (key) => {
-        const res = await getFileBase64(key);
-        loaded++;
-        setNfProgress(`Baixando ${loaded} de ${keys.length}...`);
-        return res;
-      }));
-      
-      setNfProgress("Mesclando arquivos...");
-      for (const base64 of base64Results) {
-        if (base64 && !seen.has(base64)) {
-          seen.add(base64);
-          files.push(base64);
-        }
-      }
-      if (files.length === 0) {
+      const mergedBase64 = await mergePdfs(uniqueKeys, getFileBase64, setNfProgress);
+      if (!mergedBase64) {
         alert("Nenhum arquivo válido encontrado.");
         setIsProcessingNfs(false);
         setNfProgress("");
         return;
       }
-      const mergedBase64 = await mergePdfs(files);
       const url = createBlobUrl(mergedBase64);
       const a = document.createElement('a');
       a.href = url;
@@ -510,57 +502,40 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
     }
     const keys = Array.from(keysToPrint);
 
-    if (keys.length === 0) {
+    const uniqueVals = new Set<string>();
+    const uniqueKeys: string[] = [];
+    for (const key of keys) {
+      const val = nfs[key];
+      if (val && !uniqueVals.has(val)) {
+        uniqueVals.add(val);
+        uniqueKeys.push(key);
+      }
+    }
+
+    if (uniqueKeys.length === 0) {
       alert("Nenhuma NF anexada aos itens atuais.");
       return;
     }
     
-    const w = window.open("", "_blank");
-    if (w) {
-      w.document.write("<html><body style='font-family:sans-serif;text-align:center;padding-top:50px;'><h2>Preparando documento para impressão, por favor aguarde...</h2></body></html>");
-    } else {
-      alert("Por favor, permita pop-ups para imprimir.");
-      return;
-    }
-
     setIsProcessingNfs(true);
     setNfProgress("Preparando...");
     try {
-      const files: string[] = [];
-      const seen = new Set<string>();
-      
-      let loaded = 0;
-      const base64Results = await Promise.all(keys.map(async (key) => {
-        const res = await getFileBase64(key);
-        loaded++;
-        setNfProgress(`Baixando ${loaded} de ${keys.length}...`);
-        return res;
-      }));
-      
-      setNfProgress("Mesclando arquivos...");
-      for (const base64 of base64Results) {
-        if (base64 && !seen.has(base64)) {
-          seen.add(base64);
-          files.push(base64);
-        }
-      }
-      if (files.length === 0) {
+      const mergedBase64 = await mergePdfs(uniqueKeys, getFileBase64, setNfProgress);
+      if (!mergedBase64) {
         alert("Nenhum arquivo válido encontrado.");
-        if (w) w.close();
         setIsProcessingNfs(false);
         setNfProgress("");
         return;
       }
-      const mergedBase64 = await mergePdfs(files);
       const url = createBlobUrl(mergedBase64);
       
-      if (w) {
-        w.location.href = url;
+      const w = window.open(url, "_blank");
+      if (!w) {
+        alert("Por favor, permita pop-ups para imprimir.");
       }
     } catch (e) {
       console.error(e);
       alert("Erro ao processar arquivos.");
-      if (w) w.close();
     } finally {
       setIsProcessingNfs(false);
       setNfProgress("");
@@ -3134,6 +3109,7 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
 export default function App() {
   const [lang, setLang] = useState("pt");
   const [user, setUser] = useState<any>(null);
+  const [logoLoaded, setLogoLoaded] = useState(false);
   const [imoveisList, setImoveisList] = useState<any[]>([]);
   const [selectedImovelId, setSelectedImovelId] = useState<number | null>(null);
   const [tab, setTab] = useState("dashboard");
@@ -3148,9 +3124,14 @@ export default function App() {
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isSupabaseConfigured) {
+      setLogoLoaded(true);
+      return;
+    }
     
-    fetchGlobalLogo();
+    fetchGlobalLogo().finally(() => {
+      setLogoLoaded(true);
+    });
     
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -3245,6 +3226,14 @@ export default function App() {
     setShowNewImovelModal(false);
     setNewImovelData({ nome: "", apelido: "", proprietarioEmail: "" });
   };
+
+  if (!logoLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-5" style={{ background: `linear-gradient(145deg, ${B.navy} 0%, ${B.green} 100%)` }}>
+        <Loader2 className="animate-spin text-white" size={40} />
+      </div>
+    );
+  }
 
   if (!user) return <LoginScreen t={t} lang={lang} setLang={setLang} onLogin={(u: any) => { setUser(u); setAlertStep(0); }} />;
   
