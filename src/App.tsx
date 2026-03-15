@@ -3,10 +3,11 @@ import React, { useState, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { B, T } from "./data";
 import { fmt, fmtShort, printMontagem, printLocacao, mergePdfs, createBlobUrl } from "./helpers";
-import { AlertCircle, CheckCircle2, Loader2, ChevronLeft, ChevronRight, Download, Printer, Trash2, FileText, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, ChevronLeft, ChevronRight, Download, Printer, Trash2, FileText, Upload, Eye, EyeOff } from "lucide-react";
 import { supabase } from "./supabase";
 import { getDashboardData } from "./api";
 import Papa from "papaparse";
+import Joyride, { CallBackProps, STATUS } from 'react-joyride';
 
 // ============================================================
 // BRAND — Apt Stays
@@ -432,17 +433,30 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
   };
 
   const handleDownloadAllNfs = async () => {
-    const keys = Object.keys(nfs);
+    const keysToPrint = new Set<string>();
+    for (let ci = 0; ci < m.comodos.length; ci++) {
+      const c = m.comodos[ci];
+      for (let ii = 0; ii < c.itens.length; ii++) {
+        const item = c.itens[ii];
+        const safeKey = getSafeKey(c.nome, item.item || item.nome);
+        const newKey = `nf_${safeKey}`;
+        const oldKey = `nf_${ci}_${ii}`;
+        if (nfs[newKey]) keysToPrint.add(newKey);
+        else if (nfs[oldKey]) keysToPrint.add(oldKey);
+      }
+    }
+    const keys = Array.from(keysToPrint);
+
     if (keys.length === 0) {
-      alert("Nenhuma NF anexada.");
+      alert("Nenhuma NF anexada aos itens atuais.");
       return;
     }
     setIsProcessingNfs(true);
     try {
       const files: string[] = [];
       const seen = new Set<string>();
-      for (const key of keys) {
-        const base64 = await getFileBase64(key);
+      const base64Results = await Promise.all(keys.map(key => getFileBase64(key)));
+      for (const base64 of base64Results) {
         if (base64 && !seen.has(base64)) {
           seen.add(base64);
           files.push(base64);
@@ -469,18 +483,39 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
   };
 
   const handlePrintAllNfs = async () => {
-    const keys = Object.keys(nfs);
+    const keysToPrint = new Set<string>();
+    for (let ci = 0; ci < m.comodos.length; ci++) {
+      const c = m.comodos[ci];
+      for (let ii = 0; ii < c.itens.length; ii++) {
+        const item = c.itens[ii];
+        const safeKey = getSafeKey(c.nome, item.item || item.nome);
+        const newKey = `nf_${safeKey}`;
+        const oldKey = `nf_${ci}_${ii}`;
+        if (nfs[newKey]) keysToPrint.add(newKey);
+        else if (nfs[oldKey]) keysToPrint.add(oldKey);
+      }
+    }
+    const keys = Array.from(keysToPrint);
+
     if (keys.length === 0) {
-      alert("Nenhuma NF anexada.");
+      alert("Nenhuma NF anexada aos itens atuais.");
       return;
     }
     
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write("<html><body style='font-family:sans-serif;text-align:center;padding-top:50px;'><h2>Preparando documento para impressão, por favor aguarde...</h2></body></html>");
+    } else {
+      alert("Por favor, permita pop-ups para imprimir.");
+      return;
+    }
+
     setIsProcessingNfs(true);
     try {
       const files: string[] = [];
       const seen = new Set<string>();
-      for (const key of keys) {
-        const base64 = await getFileBase64(key);
+      const base64Results = await Promise.all(keys.map(key => getFileBase64(key)));
+      for (const base64 of base64Results) {
         if (base64 && !seen.has(base64)) {
           seen.add(base64);
           files.push(base64);
@@ -488,19 +523,20 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
       }
       if (files.length === 0) {
         alert("Nenhum arquivo válido encontrado.");
+        if (w) w.close();
         setIsProcessingNfs(false);
         return;
       }
       const mergedBase64 = await mergePdfs(files);
       const url = createBlobUrl(mergedBase64);
       
-      const w = window.open(url, "_blank");
-      if (!w) {
-        alert("Por favor, permita pop-ups para imprimir.");
+      if (w) {
+        w.location.href = url;
       }
     } catch (e) {
       console.error(e);
       alert("Erro ao processar arquivos.");
+      if (w) w.close();
     } finally {
       setIsProcessingNfs(false);
     }
@@ -728,7 +764,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-bold text-gray-800">{t.montagem}</h2>
         <button onClick={() => printMontagem(imovel)}
-          className="text-xs text-white px-3 py-2 rounded-xl font-medium flex items-center gap-1"
+          className="tour-montagem-imprimir text-xs text-white px-3 py-2 rounded-xl font-medium flex items-center gap-1"
           style={{ background: B.green }}>
           🖨️ {t.print}
         </button>
@@ -812,8 +848,8 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
                     </div>
                     <div className="text-right flex flex-col items-end gap-1">
                       {item.emprestado
-                        ? <span className="text-xs text-gray-400 italic">{t.emprestado}</span>
-                        : <p className="text-sm font-bold" style={{ color: B.navy }}>{fmt(item.total)}</p>
+                        ? <span className="tour-montagem-emprestado text-xs text-gray-400 italic">{t.emprestado}</span>
+                        : <p className="tour-montagem-emprestado text-sm font-bold" style={{ color: B.navy }}>{fmt(item.total)}</p>
                       }
                       {!item.emprestado && item.qtd > 1 && <p className="text-xs text-gray-400">{fmt(item.preco)} un.</p>}
                       
@@ -821,7 +857,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
                       <div className="flex gap-1 mt-1">
                         {(nfs[`nf_${getSafeKey(c.nome, item.item || item.nome)}`] || nfs[`nf_${ci}_${ii}`]) && (
                           <>
-                            <button onClick={() => handleViewNF(c.nome, item.item || item.nome, ci, ii)} className="text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded border border-blue-200">
+                            <button onClick={() => handleViewNF(c.nome, item.item || item.nome, ci, ii)} className="tour-montagem-ver-nf text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded border border-blue-200">
                               📄 Ver NF
                             </button>
                             {isAdmin && (
@@ -916,7 +952,7 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
       {Object.keys(nfs).length > 0 && (
         <div className="flex gap-2 pt-2">
           <button onClick={handlePrintAllNfs} disabled={isProcessingNfs}
-            className={`flex-1 text-xs py-2 rounded-xl font-medium border flex justify-center items-center gap-1 ${isProcessingNfs ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`tour-montagem-imprimir-nfs flex-1 text-xs py-2 rounded-xl font-medium border flex justify-center items-center gap-1 ${isProcessingNfs ? 'opacity-50 cursor-not-allowed' : ''}`}
             style={{ borderColor: B.green, color: B.green }}>
             {isProcessingNfs ? "⏳ Processando..." : `🖨️ ${t.imprimirNfs}`}
           </button>
@@ -944,10 +980,11 @@ const PlatBadge = ({ plat }: { plat: string }) => {
 
 const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
   // Extract unique years from locacoes
-  const anosDisponiveis = Array.from(new Set(imovel.locacoesPorMes.map((m: any) => "20" + m.mes.split(" ")[1]))).sort();
+  const anosDisponiveis = Array.from(new Set(imovel.locacoesPorMes.map((m: any) => "20" + m.mes.split(" ")[1]))) as string[];
+  anosDisponiveis.sort();
   if (anosDisponiveis.length === 0) anosDisponiveis.push("2025"); // fallback
   
-  const [anoSel, setAnoSel] = useState(anosDisponiveis[anosDisponiveis.length - 1]);
+  const [anoSel, setAnoSel] = useState<string>(anosDisponiveis[anosDisponiveis.length - 1]);
   
   // Filter months by selected year
   const mesesDoAno = imovel.locacoesPorMes.filter((m: any) => m.mes.endsWith(anoSel.substring(2)));
@@ -1863,7 +1900,7 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
               <div className="flex flex-wrap gap-2">
                 {allPlataformas.map(plat => attachments[plat] && (
                   <button key={plat} onClick={() => handleView(plat)}
-                    className="text-[10px] font-semibold px-2 py-1 rounded border bg-gray-50 border-gray-200 text-gray-600">
+                    className="tour-locacoes-imprimir-um text-[10px] font-semibold px-2 py-1 rounded border bg-gray-50 border-gray-200 text-gray-600">
                     📄 {plat}
                   </button>
                 ))}
@@ -1872,7 +1909,7 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
             
             <div className="flex gap-2 mt-3">
               <button onClick={handlePrintAll}
-                className="flex-1 text-xs py-2 rounded-xl font-medium border flex justify-center items-center gap-1"
+                className="tour-locacoes-imprimir-todos flex-1 text-xs py-2 rounded-xl font-medium border flex justify-center items-center gap-1"
                 style={{ borderColor: B.green, color: B.green }}>
                 🖨️ {t.imprimirRelatorios}
               </button>
@@ -1882,20 +1919,7 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
                 ⬇️ {t.baixarRelatorios}
               </button>
             </div>
-            {Object.keys(recibos).length > 0 && (
-              <div className="flex gap-2 mt-2">
-                <button onClick={handlePrintAllRecibos} disabled={isProcessingRecibos}
-                  className={`flex-1 text-xs py-2 rounded-xl font-medium border flex justify-center items-center gap-1 ${isProcessingRecibos ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  style={{ borderColor: B.green, color: B.green }}>
-                  {isProcessingRecibos ? "⏳ Processando..." : "🖨️ Imprimir Recibos"}
-                </button>
-                <button onClick={handleDownloadAllRecibos} disabled={isProcessingRecibos}
-                  className={`flex-1 text-xs py-2 rounded-xl font-medium text-white flex justify-center items-center gap-1 ${isProcessingRecibos ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  style={{ background: B.green }}>
-                  {isProcessingRecibos ? "⏳ Processando..." : "⬇️ Baixar Recibos"}
-                </button>
-              </div>
-            )}
+
           </div>
         </div>
       )}
@@ -1949,25 +1973,27 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
                 <span>{t.lucro}</span><span>{fmt(reg.lucro)}</span>
               </div>
               
-              {(reg.despesas > 0 || reg.hospede.toLowerCase().includes('despesa')) && isAdmin && (
+              {(reg.despesas > 0 || reg.hospede.toLowerCase().includes('despesa')) && (isAdmin || recibos[reg.id]) && (
                 <div className="pt-2 mt-2 border-t border-gray-100 flex items-center justify-between">
                   <span className="text-xs text-gray-500">Recibo:</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {recibos[reg.id] ? (
                       <>
-                        <button onClick={() => handleViewRecibo(reg.id)} className="text-xs text-blue-500 hover:underline flex items-center gap-1">
-                          <FileText size={12} /> Ver
+                        <button onClick={() => handleViewRecibo(reg.id)} className="tour-locacoes-recibo text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded border border-blue-200">
+                          📄 Ver Recibo
                         </button>
-                        <button onClick={() => handleDeleteRecibo(reg.id)} className="text-xs text-red-500 hover:underline flex items-center gap-1">
-                          <Trash2 size={12} />
-                        </button>
+                        {isAdmin && (
+                          <button onClick={() => handleDeleteRecibo(reg.id)} className="text-[10px] px-2 py-1 bg-red-50 text-red-600 rounded border border-red-200">
+                            🗑️
+                          </button>
+                        )}
                       </>
-                    ) : (
-                      <label className="text-xs text-blue-500 hover:underline cursor-pointer flex items-center gap-1">
-                        <Upload size={12} /> Anexar
+                    ) : isAdmin ? (
+                      <label className="cursor-pointer text-[10px] px-2 py-1 bg-gray-50 text-gray-600 rounded border border-gray-200 block">
+                        📎 Anexar
                         <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => handleUploadRecibo(reg.id, e)} />
                       </label>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -2905,11 +2931,35 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
   const [loginRole, setLoginRole] = useState("proprietario");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      alert("Por favor, insira seu e-mail no campo acima para redefinir a senha.");
+      return;
+    }
+    if (!isSupabaseConfigured) {
+      alert("Modo de demonstração: e-mail de redefinição não enviado.");
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    setLoading(false);
+    if (error) {
+      alert("Erro ao enviar e-mail de redefinição: " + error.message);
+    } else {
+      alert("E-mail de redefinição enviado! Verifique sua caixa de entrada.");
+    }
+  };
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthError("");
     if (!isSupabaseConfigured) {
       // Mock login/register
       onLogin({ id: 'mock-id', email, user_metadata: { role, name: name || email.split('@')[0], imovelName: role === 'proprietario' ? imovelName : undefined } });
@@ -2923,12 +2973,18 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
         password: pw,
         options: { data: { role, name, imovelName: role === 'proprietario' ? imovelName : undefined } }
       });
-      if (error) alert(error.message);
+      if (error) setAuthError(error.message);
       else alert("Cadastro realizado! Faça login.");
       setIsRegister(false);
     } else {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password: pw });
-      if (error) alert(error.message);
+      if (error) {
+        if (error.message.includes("Invalid login credentials")) {
+          setAuthError("E-mail ou senha incorretos. Tente novamente.");
+        } else {
+          setAuthError(error.message);
+        }
+      }
       else onLogin(data.user);
     }
     setLoading(false);
@@ -2997,9 +3053,30 @@ const LoginScreen = ({ t, lang, setLang, onLogin }: any) => {
           <input value={email} onChange={e => setEmail(e.target.value)} placeholder={t.email} type="email" required
             className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
             style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
-          <input value={pw} onChange={e => setPw(e.target.value)} placeholder={t.password} type="password" required
-            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
-            style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
+          
+          <div className="relative">
+            <input value={pw} onChange={e => setPw(e.target.value)} placeholder={t.password} type={showPassword ? "text" : "password"} required
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2"
+              style={{ '--tw-ring-color': B.green } as React.CSSProperties} />
+            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
+          
+          {authError && (
+            <div className="text-red-500 text-xs text-center font-medium bg-red-50 p-2 rounded-lg border border-red-100">
+              {authError}
+            </div>
+          )}
+          
+          {!isRegister && (
+            <div className="flex justify-end mt-1">
+              <button type="button" onClick={handleForgotPassword} className="text-[10px] text-gray-500 hover:underline">
+                Esqueci minha senha
+              </button>
+            </div>
+          )}
+
           <button type="submit" disabled={loading}
             className="w-full py-3 rounded-xl font-semibold text-white flex justify-center items-center gap-2"
             style={{ background: B.green }}>
@@ -3036,6 +3113,7 @@ export default function App() {
   const [newImovelData, setNewImovelData] = useState({ nome: "", apelido: "", proprietarioEmail: "" });
   const [isAdmin, setIsAdmin] = useState(false);
   const [isPendingAdmin, setIsPendingAdmin] = useState(false);
+  const [runTour, setRunTour] = useState(false);
   const t = T[lang];
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
 
@@ -3247,6 +3325,91 @@ export default function App() {
     }
   };
 
+  const tourSteps = [
+    {
+      target: '.tour-dashboard',
+      content: 'Aqui você vê o resumo financeiro do seu imóvel, incluindo lucro, despesas e ocupação.',
+      disableBeacon: true,
+      targetTab: 'dashboard',
+    },
+    {
+      target: '.tour-montagem',
+      content: 'Nesta aba, você gerencia o inventário e as notas fiscais de tudo que foi comprado para o imóvel.',
+      targetTab: 'montagem',
+    },
+    {
+      target: '.tour-montagem-imprimir',
+      content: 'Imprime o relatório total de todos os itens de montagem.',
+      targetTab: 'montagem',
+    },
+    {
+      target: '.tour-montagem-ver-nf',
+      content: 'Permite visualizar a nota fiscal de um item específico.',
+      targetTab: 'montagem',
+    },
+    {
+      target: '.tour-montagem-emprestado',
+      content: 'Aqui você vê o valor do item. Se ele foi emprestado e não comprado, aparecerá a indicação "Emprestado".',
+      targetTab: 'montagem',
+    },
+    {
+      target: '.tour-montagem-imprimir-nfs',
+      content: 'Imprime ou baixa todas as notas fiscais juntas em um único arquivo.',
+      targetTab: 'montagem',
+    },
+    {
+      target: '.tour-locacoes',
+      content: 'Aqui ficam os registros de todas as locações, hóspedes, valores e recibos de despesas.',
+      targetTab: 'locacoes',
+    },
+    {
+      target: '.tour-locacoes-imprimir-um',
+      content: 'Imprimir relatório de uma plataforma específica.',
+      targetTab: 'locacoes',
+    },
+    {
+      target: '.tour-locacoes-imprimir-todos',
+      content: 'Imprime ou baixa todos os relatórios de locações juntos.',
+      targetTab: 'locacoes',
+    },
+    {
+      target: '.tour-locacoes-recibo',
+      content: 'Permite visualizar o recibo de uma despesa específica.',
+      targetTab: 'locacoes',
+    },
+    {
+      target: '.tour-documentos',
+      content: 'Acesse documentos importantes do imóvel, como manuais e contratos.',
+      targetTab: 'documentos',
+    },
+    ...(isAdmin ? [{
+      target: '.tour-infoprop',
+      content: 'Informações detalhadas do imóvel e contatos importantes.',
+      targetTab: 'infoprop',
+    }] : []),
+    {
+      target: '.tour-profile',
+      content: 'Gerencie seu perfil, senha e configurações do aplicativo.',
+      targetTab: 'profile',
+    }
+  ];
+
+  const handleJoyrideCallback = (data: CallBackProps) => {
+    const { status, type, index } = data;
+    const finishedStatuses: string[] = [STATUS.FINISHED, STATUS.SKIPPED];
+    
+    if (type === 'step:before') {
+      const step = tourSteps[index];
+      if (step && step.targetTab && step.targetTab !== tab) {
+        setTab(step.targetTab);
+      }
+    }
+
+    if (finishedStatuses.includes(status)) {
+      setRunTour(false);
+    }
+  };
+
   const renderView = () => {
     if (tab === "dashboard") return <Dashboard t={t} lang={lang} imovel={imovelData} isAdmin={isAdmin} />;
     if (tab === "montagem") return <MontagemView t={t} imovel={imovelData} isAdmin={isAdmin} onRefresh={handleRefresh} />;
@@ -3258,6 +3421,27 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto relative shadow-2xl">
+      <Joyride
+        steps={tourSteps}
+        run={runTour}
+        continuous
+        showProgress
+        showSkipButton
+        callback={handleJoyrideCallback}
+        styles={{
+          options: {
+            primaryColor: B.green,
+            zIndex: 1000,
+          }
+        }}
+        locale={{
+          back: 'Anterior',
+          close: 'Fechar',
+          last: 'Concluir',
+          next: 'Próximo',
+          skip: 'Pular'
+        }}
+      />
       {/* Header */}
       <div className="text-white px-5 pt-10 pb-5"
         style={{ background: `linear-gradient(135deg, ${B.navy} 0%, ${B.green} 100%)` }}>
@@ -3291,6 +3475,11 @@ export default function App() {
             </div>
           </div>
           <div className="flex gap-2">
+            <button onClick={() => setRunTour(true)}
+              className="text-xs px-2 py-1 rounded-lg font-medium"
+              style={{ background: "rgba(255,255,255,0.2)" }}>
+              Tour
+            </button>
             <button onClick={() => setLang(lang === "pt" ? "en" : "pt")}
               className="text-xs px-2 py-1 rounded-lg font-medium"
               style={{ background: "rgba(255,255,255,0.2)" }}>
@@ -3306,13 +3495,17 @@ export default function App() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-4 pb-24">{renderView()}</div>
+      <div className="flex-1 overflow-auto p-4 pb-24">
+        <div key={tab} className="animate-fade-in">
+          {renderView()}
+        </div>
+      </div>
 
       {/* Bottom Nav */}
       <div className="absolute bottom-0 left-0 w-full bg-white border-t border-gray-100 flex justify-around px-1 py-2 pb-6">
         {tabs.map(tb => (
           <button key={tb.id} onClick={() => setTab(tb.id)}
-            className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors"
+            className={`tour-${tb.id} flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors`}
             style={{ color: tab === tb.id ? B.green : "#9ca3af" }}>
             <span className="text-lg">{tb.icon}</span>
             <span className="text-[9px] font-semibold">{tb.label}</span>
