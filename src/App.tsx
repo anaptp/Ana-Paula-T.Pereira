@@ -283,6 +283,31 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
   const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_URL.startsWith('http');
 
   useEffect(() => {
+    const handleOpenAll = () => {
+      // Find the room that contains 'manta de sofá' or the first 'emprestado' item
+      let targetRoomIndex = 0;
+      let foundManta = false;
+      for (let i = 0; i < m.comodos.length; i++) {
+        const c = m.comodos[i];
+        for (const item of c.itens) {
+          if (c.nome.toLowerCase() === 'sala' && (item.item || item.nome).toLowerCase().includes('manta de sof')) {
+            targetRoomIndex = i;
+            foundManta = true;
+            break;
+          }
+          if (!foundManta && item.emprestado) {
+            targetRoomIndex = i;
+          }
+        }
+        if (foundManta) break;
+      }
+      setExpandido(targetRoomIndex);
+    };
+    window.addEventListener('openAllRooms', handleOpenAll);
+    return () => window.removeEventListener('openAllRooms', handleOpenAll);
+  }, [m]);
+
+  useEffect(() => {
     const loadNfs = async () => {
       const loaded: Record<string, string> = {};
       
@@ -465,14 +490,15 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
     setIsProcessingNfs(true);
     setNfProgress("Preparando...");
     try {
-      const mergedBase64 = await mergePdfs(uniqueKeys, getFileBase64, setNfProgress);
-      if (!mergedBase64) {
+      const mergedPdfBytes = await mergePdfs(uniqueKeys, getFileBase64, setNfProgress);
+      if (!mergedPdfBytes) {
         alert("Nenhum arquivo válido encontrado.");
         setIsProcessingNfs(false);
         setNfProgress("");
         return;
       }
-      const url = createBlobUrl(mergedBase64);
+      const blob = new Blob([mergedPdfBytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `NFs_Montagem.pdf`;
@@ -520,14 +546,15 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
     setIsProcessingNfs(true);
     setNfProgress("Preparando...");
     try {
-      const mergedBase64 = await mergePdfs(uniqueKeys, getFileBase64, setNfProgress);
-      if (!mergedBase64) {
+      const mergedPdfBytes = await mergePdfs(uniqueKeys, getFileBase64, setNfProgress);
+      if (!mergedPdfBytes) {
         alert("Nenhum arquivo válido encontrado.");
         setIsProcessingNfs(false);
         setNfProgress("");
         return;
       }
-      const url = createBlobUrl(mergedBase64);
+      const blob = new Blob([mergedPdfBytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
       
       const w = window.open(url, "_blank");
       if (!w) {
@@ -848,8 +875,8 @@ const MontagemView = ({ t, imovel, isAdmin, onRefresh }: any) => {
                     </div>
                     <div className="text-right flex flex-col items-end gap-1">
                       {item.emprestado
-                        ? <span className="tour-montagem-emprestado text-xs text-gray-400 italic">{t.emprestado}</span>
-                        : <p className="tour-montagem-emprestado text-sm font-bold" style={{ color: B.navy }}>{fmt(item.total)}</p>
+                        ? <span className={`text-xs text-gray-400 italic ${c.nome.toLowerCase() === 'sala' && (item.item || item.nome).toLowerCase().includes('manta de sof') ? 'tour-montagem-emprestado-manta' : 'tour-montagem-emprestado-fallback'}`}>{t.emprestado}</span>
+                        : <p className="text-sm font-bold" style={{ color: B.navy }}>{fmt(item.total)}</p>
                       }
                       {!item.emprestado && item.qtd > 1 && <p className="text-xs text-gray-400">{fmt(item.preco)} un.</p>}
                       
@@ -1395,8 +1422,9 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
         }
       }
       if (pdfs.length > 0) {
-        const mergedBase64 = await mergePdfs(pdfs);
-        const url = createBlobUrl(mergedBase64);
+        const mergedPdfBytes = await mergePdfs(pdfs);
+        const blob = new Blob([mergedPdfBytes], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = `Relatorios_${mes.mes}.pdf`;
@@ -1443,8 +1471,9 @@ const LocacoesView = ({ t, imovel, isAdmin, lang, onRefresh }: any) => {
         }
       }
       if (pdfs.length > 0) {
-        const mergedBase64 = await mergePdfs(pdfs);
-        const url = createBlobUrl(mergedBase64);
+        const mergedPdfBytes = await mergePdfs(pdfs);
+        const blob = new Blob([mergedPdfBytes], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
         if (w) {
           w.location.href = url;
         }
@@ -3367,7 +3396,7 @@ export default function App() {
       targetTab: 'montagem',
     },
     {
-      target: '.tour-montagem-emprestado',
+      target: document.querySelector('.tour-montagem-emprestado-manta') ? '.tour-montagem-emprestado-manta' : '.tour-montagem-emprestado-fallback',
       content: 'Aqui você vê o valor do item. Se ele foi emprestado e não comprado, aparecerá a indicação "Emprestado".',
       targetTab: 'montagem',
     },
@@ -3422,6 +3451,11 @@ export default function App() {
       if (step && step.targetTab && step.targetTab !== tab) {
         setTab(step.targetTab);
       }
+      
+      // Force open all rooms in 'montagem' tab so that tour targets (like 'emprestado' items) are visible in the DOM
+      if (step && step.targetTab === 'montagem' && imovelData?.montagem) {
+        window.dispatchEvent(new CustomEvent('openAllRooms'));
+      }
     }
 
     if (finishedStatuses.includes(status)) {
@@ -3463,7 +3497,6 @@ export default function App() {
         showProgress
         showSkipButton
         disableOverlayClose
-        disableScrolling
         callback={handleJoyrideCallback}
         styles={{
           options: {
@@ -3532,12 +3565,12 @@ export default function App() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-4 pb-24">
+      <div className="flex-1 p-4 pb-24">
         {renderView()}
       </div>
 
       {/* Bottom Nav */}
-      <div className="absolute bottom-0 left-0 w-full bg-white border-t border-gray-100 flex justify-around px-1 py-2 pb-6">
+      <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 flex justify-around px-1 py-2 pb-6 z-50 max-w-md left-1/2 -translate-x-1/2 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
         {tabs.map(tb => (
           <button key={tb.id} onClick={() => setTab(tb.id)}
             className={`tour-${tb.id} flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors`}

@@ -28,11 +28,36 @@ export const createBlobUrl = (base64: string): string => {
   }
 };
 
+const compressImageBase64 = (base64: string, maxWidth = 1200, quality = 0.7): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return resolve(base64);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(base64);
+    img.src = base64;
+  });
+};
+
 export const mergePdfs = async (
   items: string[], 
   fetcher?: (item: string) => Promise<string | null>,
   onProgress?: (msg: string) => void
-): Promise<string> => {
+): Promise<Uint8Array> => {
   const mergedPdf = await PDFDocument.create();
   for (let i = 0; i < items.length; i++) {
     if (onProgress) onProgress(`Processando ${i + 1} de ${items.length}...`);
@@ -55,12 +80,14 @@ export const mergePdfs = async (
         const copiedPages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
         copiedPages.forEach((page) => mergedPdf.addPage(page));
       } else if (base64.startsWith('data:image/')) {
-        const res = await fetch(base64);
+        if (onProgress) onProgress(`Otimizando imagem ${i + 1}...`);
+        const compressedBase64 = await compressImageBase64(base64);
+        const res = await fetch(compressedBase64);
         const imageBytes = await res.arrayBuffer();
         let image;
-        if (base64.startsWith('data:image/png')) {
+        if (compressedBase64.startsWith('data:image/png')) {
           image = await mergedPdf.embedPng(imageBytes);
-        } else if (base64.startsWith('data:image/jpeg') || base64.startsWith('data:image/jpg')) {
+        } else if (compressedBase64.startsWith('data:image/jpeg') || compressedBase64.startsWith('data:image/jpg')) {
           image = await mergedPdf.embedJpg(imageBytes);
         }
         if (image) {
@@ -83,7 +110,7 @@ export const mergePdfs = async (
   if (onProgress) onProgress("Gerando arquivo final...");
   await new Promise(resolve => setTimeout(resolve, 50));
   
-  const mergedPdfBytes = await mergedPdf.saveAsBase64({ dataUri: true });
+  const mergedPdfBytes = await mergedPdf.save();
   return mergedPdfBytes;
 };
 
